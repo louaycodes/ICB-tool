@@ -306,6 +306,9 @@ def get_transactions():
     return jsonify(data)
 
 
-if __name__ == "__main__":
-    print("ICB App - http://localhost:5050")
-    app.run(debug=False, port=5050)
+def start_server(port=5050):
+    """Lance le serveur Flask (utilise par le wrapper desktop)."""
+    import logging
+    log = logging.getLogger("werkzeug")
+    log.setLevel(logging.ERROR)
+    app.run(debug=False, port=port, use_reloader=False)

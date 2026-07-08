@@ -1,6 +1,6 @@
 # ICB Tool — Intercompany Billing Analysis
 
-Application web professionnelle pour charger, analyser, filtrer et valider les heures et les coûts des consultants facturés en Intercompany Billing (ICB).
+Application desktop pour charger, analyser, filtrer et valider les heures et les coûts des consultants facturés en Intercompany Billing (ICB).
 
 ## 🚀 Fonctionnalités
 
@@ -25,30 +25,32 @@ git clone https://github.com/louaycodes/ICB-tool.git
 cd ICB-tool
 ```
 
-### 3. Créer l'environnement virtuel et l'activer
+### 3. Lancement rapide (un seul clic)
+```bash
+./launch.sh
+```
+Ce script crée automatiquement l'environnement virtuel, installe les dépendances, et lance l'application dans une fenêtre native.
+
+### 4. Lancement manuel
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+pip install -r requirements.txt
+python3 icb_desktop.py
 ```
 
-### 4. Installer les dépendances
-```bash
-pip install pandas openpyxl flask
-```
-
-### 5. Lancer l'application
-```bash
-python3 icb_app.py
-```
-
-### 6. Utiliser l'application
-Ouvrez votre navigateur sur [http://localhost:5050](http://localhost:5050), cliquez sur **Charger un fichier ICB** et sélectionnez votre fichier `.xlsx`.
+### 5. Utiliser l'application
+Une fenêtre native s'ouvre automatiquement. Cliquez sur **Charger un fichier ICB** et sélectionnez votre fichier `.xlsx`.
 
 ---
 
 ## 📁 Structure du projet
 
-- `icb_app.py` : Serveur Flask Backend et pipeline de traitement des données Excel.
+- `icb_desktop.py` : Point d'entrée principal — lance l'application dans une fenêtre desktop native.
+- `icb_app.py` : Backend Flask et pipeline de traitement des données Excel.
+- `launch.sh` : Script de lancement rapide (un clic).
+- `requirements.txt` : Dépendances Python du projet.
 - `templates/index.html` : Interface utilisateur HTML5 et logique applicative JavaScript.
-- `static/style.css` : Design system et styles CSS professionnels (sans emojis, police Inter, thème corporate).
+- `static/style.css` : Design system et styles CSS professionnels (police Inter, thème corporate).
 - `.gitignore` : Exclusion des fichiers lourds/sensibles (fichiers `.xlsx`, environnements virtuels `venv`).
+
