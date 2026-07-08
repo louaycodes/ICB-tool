@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICB - Analyse des depenses consultants</title>
+    <meta name="description" content="Application ICB Capgemini - Analyse des depenses et facturation des consultants intercompany.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=4">
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="header">
+        <span class="header__title">ICB Analysis</span>
+        <div class="header__separator"></div>
+        <button class="btn btn--upload" id="btn-upload" onclick="document.getElementById('file-input').click()">
+            Charger un fichier ICB
+        </button>
+        <input type="file" id="file-input" accept=".xlsx" onchange="uploadFile(this)">
+        <div class="header__search" id="search-wrapper" style="display:none;">
+            <svg class="header__search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" class="header__search-input" id="search-input" placeholder="Rechercher (nom, ID, projet...)" oninput="applySearch(this.value)">
+        </div>
+        <span class="header__status" id="status-text">Aucun fichier charge</span>
+    </header>
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-box">
+            <div class="spinner"></div>
+            <div>Chargement du fichier en cours...</div>
+        </div>
+    </div>
+
+    <!-- Main -->
+    <main class="main">
+        <!-- Empty state (shown when no file is loaded) -->
+        <div class="empty-state" id="empty-state">
+            <div class="empty-state__icon">
+                <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+            </div>
+            <div class="empty-state__text">Aucun fichier ICB charge</div>
+            <div class="empty-state__hint">Cliquez sur "Charger un fichier ICB" pour commencer l'analyse.</div>
+        </div>
+
+        <!-- Month bar (always visible above the table) -->
+        <div class="month-bar" id="month-bar">
+            <span class="month-bar__label">Periode :</span>
+        </div>
+
+        <!-- Hierarchy table -->
+        <div class="table-panel" id="table-panel" style="display:none;">
+            <div class="table-scroll" id="table-scroll">
+                <table class="h-table" id="main-table">
+                    <thead>
+                        <tr>
+                            <th style="min-width:220px">Projet</th>
+                            <th>ID Consultant</th>
+                            <th>Nom complet</th>
+                            <th>Grade</th>
+                            <th class="num">NCR</th>
+                            <th class="num">Total Heures</th>
+                            <th class="num">Bill Amount</th>
+                            <th class="num">Raw Cost</th>
+                            <th class="num">Expected Bill</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+
+    </main>
+
+<script>
+/* =====================================================================
+   ICB App — Frontend JavaScript
+   ===================================================================== */
+
+// -- State --
+let currentMonth = null;       // null = tous les mois
+let availableMonths = [];
+let selectedConsRow = null;     // row element currently selected
+
+// -- Utilities --
+function fmt(n) {
+    if (n == null || isNaN(n)) return "";
+    return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function monthLabel(mk) {
+    // "2025-07" -> "Jul 25"
+    const parts = mk.split("-");
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const m = parseInt(parts[1], 10) - 1;
+    return months[m] + " " + parts[0].slice(2);
+}
+
+// -- Upload --
+async function uploadFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    document.getElementById("loading-overlay").classList.add("active");
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+        const resp = await fetch("/api/upload", { method: "POST", body: formData });
+        const data = await resp.json();
+        if (!resp.ok) {
+            alert(data.error || "Erreur lors du chargement.");
+            return;
+        }
+
+        // update status
+        const status = document.getElementById("status-text");
+        status.textContent = data.total_lines.toLocaleString() + " lignes lues — " +
+                             data.filtered_lines.toLocaleString() + " apres filtrage";
+        status.classList.add("header__status--loaded");
+
+        availableMonths = data.available_months;
+        currentMonth = null;
+
+        buildMonthBar();
+        await loadHierarchy();
+
+        document.getElementById("empty-state").style.display = "none";
+        document.getElementById("table-panel").style.display = "flex";
+        document.getElementById("month-bar").classList.add("visible");
+        document.getElementById("search-wrapper").style.display = "flex";
+        document.getElementById("search-input").value = "";
+        closeAllInlineDetails();
+    } catch (e) {
+        alert("Erreur reseau : " + e.message);
+    } finally {
+        document.getElementById("loading-overlay").classList.remove("active");
+        input.value = "";  // reset input so same file can be re-uploaded
+    }
+}
+
+// -- Month bar --
+function buildMonthBar() {
+    const bar = document.getElementById("month-bar");
+    // remove old buttons (keep the label)
+    while (bar.children.length > 1) {
+        bar.removeChild(bar.lastChild);
+    }
+
+    // "Tous" button
+    const allBtn = document.createElement("button");
+    allBtn.className = "month-btn active";
+    allBtn.textContent = "Tous";
+    allBtn.onclick = () => selectMonth(null);
+    allBtn.dataset.month = "all";
+    bar.appendChild(allBtn);
+
+    // individual months
+    availableMonths.forEach(mk => {
+        const btn = document.createElement("button");
+        btn.className = "month-btn";
+        btn.textContent = monthLabel(mk);
+        btn.onclick = () => selectMonth(mk);
+        btn.dataset.month = mk;
+        bar.appendChild(btn);
+    });
+}
+
+async function selectMonth(mk) {
+    currentMonth = mk;
+
+    // update button styles
+    document.querySelectorAll(".month-btn").forEach(btn => {
+        const isCurrent = (mk === null && btn.dataset.month === "all") ||
+                          (btn.dataset.month === mk);
+        btn.classList.toggle("active", isCurrent);
+    });
+
+    closeAllInlineDetails();
+    await loadHierarchy();
+}
+
+// -- Load hierarchy data --
+async function loadHierarchy() {
+    const url = "/api/hierarchy" + (currentMonth ? "?month=" + currentMonth : "");
+    const resp = await fetch(url);
+    const data = await resp.json();
+    renderHierarchy(data);
+}
+
+// -- Render hierarchy table --
+function renderHierarchy(projects) {
+    const tbody = document.getElementById("table-body");
+    tbody.innerHTML = "";
+
+    if (!projects || projects.length === 0) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = '<td colspan="9" style="text-align:center;padding:32px;color:#718096;">Aucune donnee pour cette periode.</td>';
+        tbody.appendChild(tr);
+        return;
+    }
+
+    projects.forEach(proj => {
+        // -- Project row --
+        const projRow = document.createElement("tr");
+        projRow.className = "row-project";
+        projRow.dataset.project = proj.project_number;
+        projRow.innerHTML =
+            '<td colspan="4"><span class="toggle-icon">&#9660;</span> ' + esc(proj.project_number) + '</td>' +
+            '<td></td>' +
+            '<td class="num">' + fmt(proj.totals.hours) + '</td>' +
+            '<td class="num">' + fmt(proj.totals.bill_amount) + '</td>' +
+            '<td class="num">' + fmt(proj.totals.raw_cost) + '</td>' +
+            '<td class="num">' + fmt(proj.totals.expected_bill) + '</td>';
+        projRow.onclick = () => toggleProject(proj.project_number);
+        tbody.appendChild(projRow);
+
+        proj.cc_projects.forEach(cc => {
+            // -- CC Project row --
+            const ccRow = document.createElement("tr");
+            ccRow.className = "row-cc";
+            ccRow.dataset.project = proj.project_number;
+            ccRow.dataset.cc = cc.cc_project_number;
+            ccRow.innerHTML =
+                '<td class="label-indent-1" colspan="4"><span class="toggle-icon">&#9660;</span> ' + esc(cc.cc_project_number) + '</td>' +
+                '<td></td>' +
+                '<td class="num">' + fmt(cc.totals.hours) + '</td>' +
+                '<td class="num">' + fmt(cc.totals.bill_amount) + '</td>' +
+                '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>' +
+                '<td class="num">' + fmt(cc.totals.expected_bill) + '</td>';
+            ccRow.onclick = (e) => { e.stopPropagation(); toggleCC(proj.project_number, cc.cc_project_number); };
+            tbody.appendChild(ccRow);
+
+            // -- Consultant rows --
+            cc.consultants.forEach((cons, idx) => {
+                const consRow = document.createElement("tr");
+                let cls = "row-consultant";
+                if (idx % 2 === 1) cls += " alt";
+                if (cons.has_anomaly) cls += " anomaly";
+                consRow.className = cls;
+                consRow.dataset.project = proj.project_number;
+                consRow.dataset.cc = cc.cc_project_number;
+                consRow.dataset.emp = cons.employee_id;
+                consRow.innerHTML =
+                    '<td class="label-indent-2"></td>' +
+                    '<td>' + esc(cons.employee_id) + '</td>' +
+                    '<td>' + esc(cons.name) + '</td>' +
+                    '<td>' + esc(cons.grade) + '</td>' +
+                    '<td class="num">' + fmt(cons.ncr) + '</td>' +
+                    '<td class="num">' + fmt(cons.total_hours) + '</td>' +
+                    '<td class="num">' + fmt(cons.total_bill_amount) + '</td>' +
+                    '<td class="num">' + fmt(cons.total_raw_cost) + '</td>' +
+                    '<td class="num">' + fmt(cons.total_expected_bill) + '</td>';
+                consRow.dataset.consName = cons.name;
+                consRow.onclick = (e) => { e.stopPropagation(); toggleDetail(consRow); };
+                tbody.appendChild(consRow);
+            });
+
+            // -- Totals row --
+            const totRow = document.createElement("tr");
+            totRow.className = "row-totals";
+            totRow.dataset.project = proj.project_number;
+            totRow.dataset.cc = cc.cc_project_number;
+            totRow.innerHTML =
+                '<td class="label-indent-2"></td>' +
+                '<td colspan="3">TOTAL ' + esc(cc.cc_project_number) + '</td>' +
+                '<td></td>' +
+                '<td class="num">' + fmt(cc.totals.hours) + '</td>' +
+                '<td class="num">' + fmt(cc.totals.bill_amount) + '</td>' +
+                '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>' +
+                '<td class="num">' + fmt(cc.totals.expected_bill) + '</td>';
+            tbody.appendChild(totRow);
+        });
+    });
+}
+
+// -- Toggle expand/collapse --
+function toggleProject(projNumber) {
+    const rows = document.querySelectorAll('#table-body tr');
+    const projRow = document.querySelector('.row-project[data-project="' + projNumber + '"]');
+    const isCollapsed = projRow.classList.toggle("collapsed");
+
+    rows.forEach(row => {
+        if (row === projRow) return;
+        if (row.dataset.project === projNumber && !row.classList.contains("row-project")) {
+            row.style.display = isCollapsed ? "none" : "";
+        }
+    });
+}
+
+function toggleCC(projNumber, ccNumber) {
+    const rows = document.querySelectorAll('#table-body tr');
+    const ccRow = document.querySelector('.row-cc[data-project="' + projNumber + '"][data-cc="' + ccNumber + '"]');
+    const isCollapsed = ccRow.classList.toggle("collapsed");
+
+    rows.forEach(row => {
+        if (row === ccRow) return;
+        if (row.dataset.project === projNumber && row.dataset.cc === ccNumber &&
+            !row.classList.contains("row-cc") && !row.classList.contains("row-project")) {
+            row.style.display = isCollapsed ? "none" : "";
+        }
+    });
+}
+
+// -- Inline detail (toggle under the consultant row) --
+async function toggleDetail(rowEl) {
+    const empId = rowEl.dataset.emp;
+    const ccProject = rowEl.dataset.cc;
+    const name = rowEl.dataset.consName || "";
+
+    // if detail row already exists right after, remove it (toggle off)
+    const nextRow = rowEl.nextElementSibling;
+    if (nextRow && nextRow.classList.contains("row-detail-inline")) {
+        nextRow.remove();
+        rowEl.classList.remove("selected");
+        selectedConsRow = null;
+        return;
+    }
+
+    // close any other open detail
+    closeAllInlineDetails();
+
+    // highlight this row
+    rowEl.classList.add("selected");
+    selectedConsRow = rowEl;
+
+    // fetch transactions
+    const month = currentMonth || "";
+    const url = "/api/transactions?employee=" + encodeURIComponent(empId) +
+                "&cc_project=" + encodeURIComponent(ccProject) +
+                (month ? "&month=" + month : "");
+    const resp = await fetch(url);
+    const txns = await resp.json();
+
+    // build the inline detail row
+    const detailRow = document.createElement("tr");
+    detailRow.className = "row-detail-inline";
+    detailRow.dataset.project = rowEl.dataset.project;
+    detailRow.dataset.cc = ccProject;
+    const td = document.createElement("td");
+    td.setAttribute("colspan", "9");
+
+    let html = '<div class="inline-detail">';
+    html += '<div class="inline-detail__header">';
+    html += '<span>Transactions de ' + esc(name) + ' (' + esc(empId) + ') sur ' + esc(ccProject) + '</span>';
+    html += '</div>';
+    html += '<table class="detail-table"><thead><tr>';
+    html += '<th>ID Transaction</th><th>Date</th><th>Type depense</th><th>Facture</th>';
+    html += '<th class="num">Heures</th><th class="num">NCR</th>';
+    html += '<th class="num">Raw Cost</th><th class="num">Bill Amount</th><th class="num">Expected Bill</th>';
+    html += '</tr></thead><tbody>';
+    txns.forEach((t, i) => {
+        let rowClass = (i % 2 === 0 ? 'even' : 'odd');
+        if (t.has_anomaly) {
+            rowClass += ' anomaly';
+        }
+        html += '<tr class="' + rowClass + '">';
+        html += '<td>' + esc(t.item_id) + '</td>';
+        html += '<td>' + esc(t.date) + '</td>';
+        html += '<td>' + esc(t.expenditure_type) + '</td>';
+        html += '<td>' + esc(t.invoice_type) + '</td>';
+        html += '<td class="num">' + fmt(t.quantity) + '</td>';
+        html += '<td class="num">' + fmt(t.ncr) + '</td>';
+        html += '<td class="num">' + fmt(t.raw_cost) + '</td>';
+        html += '<td class="num">' + fmt(t.bill_amount) + '</td>';
+        html += '<td class="num">' + fmt(t.expected_bill) + '</td>';
+        html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    td.innerHTML = html;
+    detailRow.appendChild(td);
+
+    // insert right after the consultant row
+    rowEl.parentNode.insertBefore(detailRow, rowEl.nextSibling);
+}
+
+function closeAllInlineDetails() {
+    document.querySelectorAll('.row-detail-inline').forEach(r => r.remove());
+    if (selectedConsRow) {
+        selectedConsRow.classList.remove("selected");
+        selectedConsRow = null;
+    }
+}
+
+// -- Search --
+function applySearch(query) {
+    const q = query.trim().toLowerCase();
+    const rows = document.querySelectorAll('#table-body tr');
+
+    if (!q) {
+        // show everything
+        rows.forEach(r => r.style.display = "");
+        return;
+    }
+
+    // track which projects/cc projects have visible consultants
+    const visibleProjects = new Set();
+    const visibleCCs = new Set();
+
+    // first pass: check consultant rows
+    rows.forEach(row => {
+        if (!row.classList.contains("row-consultant")) return;
+        const text = row.textContent.toLowerCase();
+        const proj = row.dataset.project || "";
+        const cc = row.dataset.cc || "";
+        const matches = text.includes(q) || proj.toLowerCase().includes(q) || cc.toLowerCase().includes(q);
+        row.style.display = matches ? "" : "none";
+        if (matches) {
+            visibleProjects.add(row.dataset.project);
+            visibleCCs.add(row.dataset.project + "|" + row.dataset.cc);
+        }
+    });
+
+    // second pass: show/hide project, cc, and totals rows
+    rows.forEach(row => {
+        if (row.classList.contains("row-project")) {
+            row.style.display = visibleProjects.has(row.dataset.project) ? "" : "none";
+        } else if (row.classList.contains("row-cc")) {
+            row.style.display = visibleCCs.has(row.dataset.project + "|" + row.dataset.cc) ? "" : "none";
+        } else if (row.classList.contains("row-totals")) {
+            row.style.display = visibleCCs.has(row.dataset.project + "|" + row.dataset.cc) ? "" : "none";
+        }
+    });
+}
+
+// -- Escape HTML --
+function esc(val) {
+    if (val == null) return "";
+    const d = document.createElement("div");
+    d.textContent = String(val);
+    return d.innerHTML;
+}
+</script>
+</body>
+</html>

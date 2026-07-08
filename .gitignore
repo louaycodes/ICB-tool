@@ -1,0 +1,28 @@
+# Virtual Environment
+venv/
+.venv/
+ENV/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Excel data files (don't commit heavy/sensitive data)
+*.xlsx
+*.xls
+~$*
+temp_*.xlsx
+
+# Local uploads
+uploads/
