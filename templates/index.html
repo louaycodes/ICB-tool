@@ -19,6 +19,9 @@
         <button class="btn btn--upload" id="btn-upload" onclick="document.getElementById('file-input').click()">
             Charger un fichier ICB
         </button>
+        <button class="btn btn--export" id="btn-export" onclick="openExportModal()" style="display:none;">
+            Exporter (Excel)
+        </button>
         <input type="file" id="file-input" accept=".xlsx" onchange="uploadFile(this)">
         <div class="header__search" id="search-wrapper" style="display:none;">
             <svg class="header__search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -32,6 +35,28 @@
         <div class="loading-box">
             <div class="spinner"></div>
             <div>Chargement du fichier en cours...</div>
+        </div>
+    </div>
+
+    <!-- Export modal -->
+    <div class="modal-overlay" id="export-modal">
+        <div class="modal-content">
+            <h3>Exporter vers Excel</h3>
+            <p>Choisissez l'intervalle de dates pour l'export :</p>
+            <div class="modal-form">
+                <label>
+                    <span>Date de debut :</span>
+                    <input type="date" id="export-start" />
+                </label>
+                <label>
+                    <span>Date de fin :</span>
+                    <input type="date" id="export-end" />
+                </label>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn--cancel" onclick="closeExportModal()">Annuler</button>
+                <button class="btn btn--submit" onclick="submitExport()">Exporter</button>
+            </div>
         </div>
     </div>
 
@@ -56,16 +81,15 @@
             <div class="table-scroll" id="table-scroll">
                 <table class="h-table" id="main-table">
                     <thead>
-                        <tr>
-                            <th style="min-width:220px">Projet</th>
+                    <tr>
+                            <th style="min-width:280px">Projet</th>
                             <th>ID Consultant</th>
                             <th>Nom complet</th>
                             <th>Grade</th>
                             <th class="num">NCR</th>
-                            <th class="num">Total Heures</th>
+                            <th class="num">Working Days</th>
                             <th class="num">Bill Amount</th>
                             <th class="num">Raw Cost</th>
-                            <th class="num">Expected Bill</th>
                         </tr>
                     </thead>
                     <tbody id="table-body"></tbody>
@@ -133,6 +157,7 @@ async function uploadFile(input) {
         document.getElementById("empty-state").style.display = "none";
         document.getElementById("table-panel").style.display = "flex";
         document.getElementById("month-bar").classList.add("visible");
+        document.getElementById("btn-export").style.display = "inline-flex";
         document.getElementById("search-wrapper").style.display = "flex";
         document.getElementById("search-input").value = "";
         closeAllInlineDetails();
@@ -194,114 +219,84 @@ async function loadHierarchy() {
 }
 
 // -- Render hierarchy table --
-function renderHierarchy(projects) {
+function renderHierarchy(ccProjects) {
     const tbody = document.getElementById("table-body");
     tbody.innerHTML = "";
 
-    if (!projects || projects.length === 0) {
+    if (!ccProjects || ccProjects.length === 0) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="9" style="text-align:center;padding:32px;color:#718096;">Aucune donnee pour cette periode.</td>';
+        tr.innerHTML = '<td colspan="8" style="text-align:center;padding:32px;color:#718096;">Aucune donnee pour cette periode.</td>';
         tbody.appendChild(tr);
         return;
     }
 
-    projects.forEach(proj => {
-        // -- Project row --
-        const projRow = document.createElement("tr");
-        projRow.className = "row-project";
-        projRow.dataset.project = proj.project_number;
-        projRow.innerHTML =
-            '<td colspan="4"><span class="toggle-icon">&#9660;</span> ' + esc(proj.project_number) + '</td>' +
+    ccProjects.forEach(cc => {
+        // -- CC Project row (top-level) --
+        const ccRow = document.createElement("tr");
+        ccRow.className = "row-cc collapsed";
+        ccRow.dataset.cc = cc.cc_project_number;
+        const label = cc.project_name
+            ? esc(cc.project_name) + ' — ' + esc(cc.cc_project_number)
+            : esc(cc.cc_project_number);
+        ccRow.innerHTML =
+            '<td colspan="4"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
             '<td></td>' +
-            '<td class="num">' + fmt(proj.totals.hours) + '</td>' +
-            '<td class="num">' + fmt(proj.totals.bill_amount) + '</td>' +
-            '<td class="num">' + fmt(proj.totals.raw_cost) + '</td>' +
-            '<td class="num">' + fmt(proj.totals.expected_bill) + '</td>';
-        projRow.onclick = () => toggleProject(proj.project_number);
-        tbody.appendChild(projRow);
+            '<td class="num">' + fmt(cc.totals.working_days) + '</td>' +
+            '<td class="num">' + fmt(cc.totals.bill_amount) + '</td>' +
+            '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>';
+        ccRow.onclick = () => toggleCC(cc.cc_project_number);
+        tbody.appendChild(ccRow);
 
-        proj.cc_projects.forEach(cc => {
-            // -- CC Project row --
-            const ccRow = document.createElement("tr");
-            ccRow.className = "row-cc";
-            ccRow.dataset.project = proj.project_number;
-            ccRow.dataset.cc = cc.cc_project_number;
-            ccRow.innerHTML =
-                '<td class="label-indent-1" colspan="4"><span class="toggle-icon">&#9660;</span> ' + esc(cc.cc_project_number) + '</td>' +
-                '<td></td>' +
-                '<td class="num">' + fmt(cc.totals.hours) + '</td>' +
-                '<td class="num">' + fmt(cc.totals.bill_amount) + '</td>' +
-                '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>' +
-                '<td class="num">' + fmt(cc.totals.expected_bill) + '</td>';
-            ccRow.onclick = (e) => { e.stopPropagation(); toggleCC(proj.project_number, cc.cc_project_number); };
-            tbody.appendChild(ccRow);
-
-            // -- Consultant rows --
-            cc.consultants.forEach((cons, idx) => {
-                const consRow = document.createElement("tr");
-                let cls = "row-consultant";
-                if (idx % 2 === 1) cls += " alt";
-                if (cons.has_anomaly) cls += " anomaly";
-                consRow.className = cls;
-                consRow.dataset.project = proj.project_number;
-                consRow.dataset.cc = cc.cc_project_number;
-                consRow.dataset.emp = cons.employee_id;
-                consRow.innerHTML =
-                    '<td class="label-indent-2"></td>' +
-                    '<td>' + esc(cons.employee_id) + '</td>' +
-                    '<td>' + esc(cons.name) + '</td>' +
-                    '<td>' + esc(cons.grade) + '</td>' +
-                    '<td class="num">' + fmt(cons.ncr) + '</td>' +
-                    '<td class="num">' + fmt(cons.total_hours) + '</td>' +
-                    '<td class="num">' + fmt(cons.total_bill_amount) + '</td>' +
-                    '<td class="num">' + fmt(cons.total_raw_cost) + '</td>' +
-                    '<td class="num">' + fmt(cons.total_expected_bill) + '</td>';
-                consRow.dataset.consName = cons.name;
-                consRow.onclick = (e) => { e.stopPropagation(); toggleDetail(consRow); };
-                tbody.appendChild(consRow);
-            });
-
-            // -- Totals row --
-            const totRow = document.createElement("tr");
-            totRow.className = "row-totals";
-            totRow.dataset.project = proj.project_number;
-            totRow.dataset.cc = cc.cc_project_number;
-            totRow.innerHTML =
-                '<td class="label-indent-2"></td>' +
-                '<td colspan="3">TOTAL ' + esc(cc.cc_project_number) + '</td>' +
-                '<td></td>' +
-                '<td class="num">' + fmt(cc.totals.hours) + '</td>' +
-                '<td class="num">' + fmt(cc.totals.bill_amount) + '</td>' +
-                '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>' +
-                '<td class="num">' + fmt(cc.totals.expected_bill) + '</td>';
-            tbody.appendChild(totRow);
+        // -- Consultant rows --
+        cc.consultants.forEach((cons, idx) => {
+            const consRow = document.createElement("tr");
+            let cls = "row-consultant";
+            if (idx % 2 === 1) cls += " alt";
+            if (cons.has_anomaly) cls += " anomaly";
+            consRow.className = cls;
+            consRow.style.display = "none";
+            consRow.dataset.cc = cc.cc_project_number;
+            consRow.dataset.emp = cons.employee_id;
+            consRow.dataset.projectname = cc.project_name || "";
+            consRow.innerHTML =
+                '<td class="label-indent-1"></td>' +
+                '<td>' + esc(cons.employee_id) + '</td>' +
+                '<td>' + esc(cons.name) + '</td>' +
+                '<td>' + esc(cons.grade) + '</td>' +
+                '<td class="num">' + fmt(cons.ncr) + '</td>' +
+                '<td class="num">' + fmt(cons.working_days) + '</td>' +
+                '<td class="num">' + fmt(cons.total_bill_amount) + '</td>' +
+                '<td class="num">' + fmt(cons.total_raw_cost) + '</td>';
+            consRow.dataset.consName = cons.name;
+            consRow.onclick = (e) => { e.stopPropagation(); toggleDetail(consRow); };
+            tbody.appendChild(consRow);
         });
+
+        // -- Totals row --
+        const totRow = document.createElement("tr");
+        totRow.className = "row-totals";
+        totRow.style.display = "none";
+        totRow.dataset.cc = cc.cc_project_number;
+        totRow.innerHTML =
+            '<td class="label-indent-1"></td>' +
+            '<td colspan="3">TOTAL ' + esc(cc.cc_project_number) + '</td>' +
+            '<td></td>' +
+            '<td class="num">' + fmt(cc.totals.working_days) + '</td>' +
+            '<td class="num">' + fmt(cc.totals.bill_amount) + '</td>' +
+            '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>';
+        tbody.appendChild(totRow);
     });
 }
 
 // -- Toggle expand/collapse --
-function toggleProject(projNumber) {
+function toggleCC(ccNumber) {
     const rows = document.querySelectorAll('#table-body tr');
-    const projRow = document.querySelector('.row-project[data-project="' + projNumber + '"]');
-    const isCollapsed = projRow.classList.toggle("collapsed");
-
-    rows.forEach(row => {
-        if (row === projRow) return;
-        if (row.dataset.project === projNumber && !row.classList.contains("row-project")) {
-            row.style.display = isCollapsed ? "none" : "";
-        }
-    });
-}
-
-function toggleCC(projNumber, ccNumber) {
-    const rows = document.querySelectorAll('#table-body tr');
-    const ccRow = document.querySelector('.row-cc[data-project="' + projNumber + '"][data-cc="' + ccNumber + '"]');
+    const ccRow = document.querySelector('.row-cc[data-cc="' + ccNumber + '"]');
     const isCollapsed = ccRow.classList.toggle("collapsed");
 
     rows.forEach(row => {
         if (row === ccRow) return;
-        if (row.dataset.project === projNumber && row.dataset.cc === ccNumber &&
-            !row.classList.contains("row-cc") && !row.classList.contains("row-project")) {
+        if (row.dataset.cc === ccNumber && !row.classList.contains("row-cc")) {
             row.style.display = isCollapsed ? "none" : "";
         }
     });
@@ -340,10 +335,9 @@ async function toggleDetail(rowEl) {
     // build the inline detail row
     const detailRow = document.createElement("tr");
     detailRow.className = "row-detail-inline";
-    detailRow.dataset.project = rowEl.dataset.project;
     detailRow.dataset.cc = ccProject;
     const td = document.createElement("td");
-    td.setAttribute("colspan", "9");
+    td.setAttribute("colspan", "8");
 
     let html = '<div class="inline-detail">';
     html += '<div class="inline-detail__header">';
@@ -351,8 +345,8 @@ async function toggleDetail(rowEl) {
     html += '</div>';
     html += '<table class="detail-table"><thead><tr>';
     html += '<th>ID Transaction</th><th>Date</th><th>Type depense</th><th>Facture</th>';
-    html += '<th class="num">Heures</th><th class="num">NCR</th>';
-    html += '<th class="num">Raw Cost</th><th class="num">Bill Amount</th><th class="num">Expected Bill</th>';
+    html += '<th class="num">Working Days</th><th class="num">NCR</th>';
+    html += '<th class="num">Raw Cost</th><th class="num">Bill Amount</th>';
     html += '</tr></thead><tbody>';
     txns.forEach((t, i) => {
         let rowClass = (i % 2 === 0 ? 'even' : 'odd');
@@ -364,12 +358,10 @@ async function toggleDetail(rowEl) {
         html += '<td>' + esc(t.date) + '</td>';
         html += '<td>' + esc(t.expenditure_type) + '</td>';
         html += '<td>' + esc(t.invoice_type) + '</td>';
-        html += '<td class="num">' + fmt(t.quantity) + '</td>';
+        html += '<td class="num">' + fmt(t.working_days) + '</td>';
         html += '<td class="num">' + fmt(t.ncr) + '</td>';
         html += '<td class="num">' + fmt(t.raw_cost) + '</td>';
-        html += '<td class="num">' + fmt(t.bill_amount) + '</td>';
-        html += '<td class="num">' + fmt(t.expected_bill) + '</td>';
-        html += '</tr>';
+        html += '<td class="num">' + fmt(t.bill_amount) + '</td>';        html += '</tr>';
     });
     html += '</tbody></table></div>';
     td.innerHTML = html;
@@ -398,32 +390,44 @@ function applySearch(query) {
         return;
     }
 
-    // track which projects/cc projects have visible consultants
-    const visibleProjects = new Set();
+    // track which cc projects have visible consultants
     const visibleCCs = new Set();
 
-    // first pass: check consultant rows
+    // first pass: check consultant rows (text + cc number + project name)
     rows.forEach(row => {
         if (!row.classList.contains("row-consultant")) return;
         const text = row.textContent.toLowerCase();
-        const proj = row.dataset.project || "";
-        const cc = row.dataset.cc || "";
-        const matches = text.includes(q) || proj.toLowerCase().includes(q) || cc.toLowerCase().includes(q);
+        const cc = (row.dataset.cc || "").toLowerCase();
+        const projectName = (row.dataset.projectname || "").toLowerCase();
+        const matches = text.includes(q) || cc.includes(q) || projectName.includes(q);
         row.style.display = matches ? "" : "none";
         if (matches) {
-            visibleProjects.add(row.dataset.project);
-            visibleCCs.add(row.dataset.project + "|" + row.dataset.cc);
+            visibleCCs.add(row.dataset.cc);
         }
     });
 
-    // second pass: show/hide project, cc, and totals rows
+    // also check CC rows directly (project name is in their text content)
     rows.forEach(row => {
-        if (row.classList.contains("row-project")) {
-            row.style.display = visibleProjects.has(row.dataset.project) ? "" : "none";
-        } else if (row.classList.contains("row-cc")) {
-            row.style.display = visibleCCs.has(row.dataset.project + "|" + row.dataset.cc) ? "" : "none";
+        if (!row.classList.contains("row-cc")) return;
+        const ccText = row.textContent.toLowerCase();
+        if (ccText.includes(q)) {
+            visibleCCs.add(row.dataset.cc);
+        }
+    });
+
+    // show all consultant rows for matched CC projects
+    rows.forEach(row => {
+        if (row.classList.contains("row-consultant") && visibleCCs.has(row.dataset.cc)) {
+            row.style.display = "";
+        }
+    });
+
+    // second pass: show/hide cc and totals rows
+    rows.forEach(row => {
+        if (row.classList.contains("row-cc")) {
+            row.style.display = visibleCCs.has(row.dataset.cc) ? "" : "none";
         } else if (row.classList.contains("row-totals")) {
-            row.style.display = visibleCCs.has(row.dataset.project + "|" + row.dataset.cc) ? "" : "none";
+            row.style.display = visibleCCs.has(row.dataset.cc) ? "" : "none";
         }
     });
 }
@@ -434,6 +438,48 @@ function esc(val) {
     const d = document.createElement("div");
     d.textContent = String(val);
     return d.innerHTML;
+}
+
+// -- Export --
+function openExportModal() {
+    document.getElementById("export-modal").classList.add("active");
+    // Optionnel : on peut pre-remplir avec les dates du fichier
+}
+
+function closeExportModal() {
+    document.getElementById("export-modal").classList.remove("active");
+}
+
+function submitExport() {
+    const start = document.getElementById("export-start").value;
+    const end = document.getElementById("export-end").value;
+    
+    if (!start || !end) {
+        alert("Veuillez selectionner une date de debut et une date de fin.");
+        return;
+    }
+    if (start > end) {
+        alert("La date de debut doit etre inferieure ou egale a la date de fin.");
+        return;
+    }
+
+    const url = `/api/export?start_date=${start}&end_date=${end}`;
+    
+    fetch(url)
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                alert("Erreur lors de l'exportation : " + data.error);
+            } else {
+                alert(`${data.message}\nChemin : ${data.path}`);
+            }
+        })
+        .catch(err => {
+            alert("Erreur réseau : " + err);
+        })
+        .finally(() => {
+            closeExportModal();
+        });
 }
 </script>
 </body>

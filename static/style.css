@@ -50,7 +50,8 @@ body {
     background: var(--color-bg);
     color: var(--color-text);
     line-height: 1.5;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
 }
@@ -109,6 +110,15 @@ body {
 
 .btn--upload:hover {
     background: var(--color-accent-light);
+}
+
+.btn--export {
+    background: var(--color-success);
+    color: #fff;
+}
+
+.btn--export:hover {
+    background: #2f855a;
 }
 
 .btn--close {
@@ -276,7 +286,8 @@ body {
 /* --- Hierarchy table --- */
 .h-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: 0.85rem;
 }
 
@@ -297,8 +308,8 @@ body {
     text-align: right;
 }
 
-/* project row */
-.row-project td {
+/* cc project row (top-level grouping) */
+.row-cc td {
     background: var(--color-primary);
     color: var(--color-project-text);
     font-weight: 700;
@@ -308,34 +319,11 @@ body {
     font-size: 0.9rem;
 }
 
-.row-project td .toggle-icon {
+.row-cc td .toggle-icon {
     display: inline-block;
     width: 18px;
     font-size: 0.7rem;
     color: rgba(255,255,255,0.6);
-    transition: transform var(--transition);
-}
-
-.row-project.collapsed td .toggle-icon {
-    transform: rotate(-90deg);
-}
-
-/* cc project row */
-.row-cc td {
-    background: var(--color-cc-bg);
-    color: var(--color-cc-text);
-    font-weight: 600;
-    padding: 8px 14px;
-    cursor: pointer;
-    border-bottom: 1px solid var(--color-border);
-    font-size: 0.85rem;
-}
-
-.row-cc td .toggle-icon {
-    display: inline-block;
-    width: 18px;
-    font-size: 0.65rem;
-    color: var(--color-text-muted);
     transition: transform var(--transition);
 }
 
@@ -560,4 +548,84 @@ body {
 .table-scroll::-webkit-scrollbar-thumb:hover,
 .detail-scroll::-webkit-scrollbar-thumb:hover {
     background: #a0aec0;
+}
+
+/* --- Modals --- */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(26,58,92,0.6);
+    z-index: 300;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay.active {
+    display: flex;
+}
+
+.modal-content {
+    background: var(--color-surface);
+    padding: 32px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    width: 400px;
+    max-width: 90%;
+}
+
+.modal-content h3 {
+    margin-bottom: 12px;
+    color: var(--color-primary);
+}
+
+.modal-content p {
+    margin-bottom: 24px;
+    color: var(--color-text-secondary);
+}
+
+.modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.modal-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-weight: 500;
+}
+
+.modal-form input[type="date"] {
+    padding: 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-family: inherit;
+    font-size: 1rem;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.btn--cancel {
+    background: var(--color-border);
+    color: var(--color-text);
+}
+
+.btn--cancel:hover {
+    background: var(--color-border-light);
+}
+
+.btn--submit {
+    background: var(--color-primary);
+    color: #fff;
+}
+
+.btn--submit:hover {
+    background: var(--color-primary-light);
 }
