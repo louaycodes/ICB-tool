@@ -72,8 +72,8 @@ class ExpenditureItem:
 
     def __init__(self, row: dict):
         self.item_id = row.get("Expenditure Item Id")
-        self.project_number = row.get("Project Number")
-        self.cc_project_number = row.get("CC Project Number")
+        self.project_number = self._normalize_key(row.get("Project Number"))
+        self.cc_project_number = self._normalize_key(row.get("CC Project Number"))
         self.task_number = row.get("Task Number")
         self.employee_number = row.get("Employee Number")
         self.full_name = row.get("Full Name")
@@ -96,6 +96,16 @@ class ExpenditureItem:
         if self.bill_rate is not None and self.quantity is not None:
             return self.bill_rate * self.quantity / 8
         return 0.0
+
+    @staticmethod
+    def _normalize_key(value):
+        """Force toutes les cles projet/CC-projet en texte propre (evite le
+        melange str/int/None qui fait planter sorted() plus loin)."""
+        if value is None:
+            return "N/A"
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))   # 123.0 -> "123", evite les doublons avec "123"
+        return str(value).strip()
 
     def matches_filter(self):
         return self.expenditure_type in EXPENDITURE_TYPES and self.uom == UOM_FILTER
