@@ -22,7 +22,11 @@
         <button class="btn btn--export" id="btn-export" onclick="submitExport()" style="display:none;">
             Exporter (Excel)
         </button>
+        <button class="btn btn--upload" id="btn-upload-forecast" onclick="document.getElementById('forecast-input').click()" style="display:none; background-color: var(--color-accent-light);">
+            Importer Forecast
+        </button>
         <input type="file" id="file-input" accept=".xlsx" onchange="uploadFile(this)">
+        <input type="file" id="forecast-input" accept=".xlsx" onchange="uploadForecast(this)" style="display:none;">
         <div class="header__search" id="search-wrapper" style="display:none;">
             <svg class="header__search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="text" class="header__search-input" id="search-input" placeholder="Rechercher (nom, ID, projet...)" oninput="applySearch(this.value)">
@@ -152,15 +156,53 @@ async function uploadFile(input) {
         document.getElementById("table-panel").style.display = "flex";
         document.getElementById("global-filters").style.display = "flex";
         document.getElementById("month-bar").classList.add("visible");
-        document.getElementById("btn-export").style.display = "inline-flex";
+        document.getElementById("btn-export").style.display = "inline-block";
+        // Afficher le bouton forecast apres avoir upload l'ICB
+        document.getElementById("btn-upload-forecast").style.display = "inline-block";
         document.getElementById("search-wrapper").style.display = "flex";
         document.getElementById("search-input").value = "";
+        
+        document.getElementById("status-text").textContent = `Fichier actif: ${file.name} (${data.filtered_lines} lignes)`;
+        document.getElementById("status-text").classList.add("header__status--loaded");
         closeAllInlineDetails();
     } catch (e) {
         alert("Erreur reseau : " + e.message);
     } finally {
         document.getElementById("loading-overlay").classList.remove("active");
         input.value = "";  // reset input so same file can be re-uploaded
+    }
+}
+
+async function uploadForecast(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const overlay = document.getElementById("loading-overlay");
+    overlay.querySelector("div").textContent = "Chargement du Forecast en cours...";
+    overlay.classList.add("active");
+
+    try {
+        const res = await fetch("/api/upload_forecast", {
+            method: "POST",
+            body: formData
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert(data.error || "Erreur lors du chargement Forecast");
+        } else {
+            // Cache definitivement le bouton d'import forecast
+            document.getElementById("btn-upload-forecast").style.display = "none";
+            // Recharge la hierarchie pour afficher les nouvelles colonnes
+            await loadHierarchy();
+        }
+    } catch (err) {
+        alert("Erreur de connexion.");
+    } finally {
+        overlay.classList.remove("active");
+        overlay.querySelector("div").textContent = "Chargement du fichier en cours...";
+        input.value = "";
     }
 }
 
@@ -260,11 +302,11 @@ function renderHierarchy(ccProjects) {
         ccRow.innerHTML =
             '<td colspan="4"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
             '<td></td>' + // NCR ICB
-            '<td></td>' + // NCR FORECAST
+            '<td class="num" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
             '<td class="num">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
-            '<td></td>' + // WD FORECAST
+            '<td class="num" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
             '<td class="num">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
-            '<td></td>' + // BA FORECAST
+            '<td class="num" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
             '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>';
         ccRow.onclick = () => toggleCC(cc.cc_project_number);
         tbody.appendChild(ccRow);
@@ -286,11 +328,11 @@ function renderHierarchy(ccProjects) {
                 '<td>' + esc(cons.name) + '</td>' +
                 '<td>' + esc(cons.grade) + '</td>' +
                 '<td class="num">' + fmt(cons.ncr) + '</td>' + // NCR ICB
-                '<td></td>' + // NCR FORECAST
+                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_ncr) : '') + '</td>' + // NCR FORECAST
                 '<td class="num">' + fmt(cons.working_days) + '</td>' + // WD ICB
-                '<td></td>' + // WD FORECAST
+                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_working_days) : '') + '</td>' + // WD FORECAST
                 '<td class="num">' + fmt(cons.total_bill_amount) + '</td>' + // BA ICB
-                '<td></td>' + // BA FORECAST
+                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
                 '<td class="num">' + fmt(cons.total_raw_cost) + '</td>';
             consRow.dataset.consName = cons.name;
             consRow.onclick = (e) => { e.stopPropagation(); toggleDetail(consRow); };
@@ -306,11 +348,11 @@ function renderHierarchy(ccProjects) {
             '<td class="label-indent-1"></td>' +
             '<td colspan="3">TOTAL ' + esc(cc.cc_project_number) + '</td>' +
             '<td></td>' + // NCR ICB
-            '<td></td>' + // NCR FORECAST
+            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
             '<td class="num">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
-            '<td></td>' + // WD FORECAST
+            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
             '<td class="num">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
-            '<td></td>' + // BA FORECAST
+            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
             '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>';
         tbody.appendChild(totRow);
     });

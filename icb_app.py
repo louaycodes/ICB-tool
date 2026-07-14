@@ -5,13 +5,14 @@ via des endpoints JSON pour l'interface web.
 """
 
 import os
-import json
-from datetime import datetime, timedelta
-from collections import defaultdict, OrderedDict
-
+import io
+import math
+import tempfile
 import pandas as pd
+from datetime import datetime, date, timedelta
+from collections import OrderedDict
+from flask import Flask, request, jsonify, render_template
 from openpyxl import load_workbook
-from flask import Flask, render_template, request, jsonify
 
 # --- Parametres metier ---
 EXPENDITURE_TYPES = [
@@ -126,10 +127,61 @@ class ICBPipeline:
         self.items = []
         self.filtered_items = []
         self.available_months = []
+        self.forecast_data = {}  # (cc_proj, emp, month_key) -> {"ncr": float, "working_days": float, "bill_amount": float}
 
     def load(self, path):
         df_raw = fast_load_excel(path)
         self.items = [ExpenditureItem(row) for row in df_raw.to_dict("records")]
+
+    def load_forecast(self, path):
+        """Parse un fichier Forecast et remplit self.forecast_data."""
+        import openpyxl
+        from datetime import datetime
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        ws = wb.active
+        current_year = datetime.now().year
+        
+        # En-tetes reellement en ligne 6, donnees a partir de la ligne 7
+        for row in ws.iter_rows(min_row=7, values_only=True):
+            proj_num = row[0]
+            ggid = row[2]
+            
+            if proj_num is None or ggid is None:
+                continue
+                
+            norm_proj = ExpenditureItem._normalize_key(proj_num)
+            norm_ggid = str(ggid).strip().replace("6427_", "")
+            
+            for m in range(12):
+                month_str = f"{m+1:02d}"
+                month_key = f"{current_year}-{month_str}"
+                
+                base_idx = 4 + (m * 6)
+                if base_idx + 4 >= len(row):
+                    break
+                    
+                val_frc = row[base_idx + 1]
+                val_prod = row[base_idx + 3]
+                val_cost = row[base_idx + 4]
+                
+                def to_float(val):
+                    try:
+                        if val is None or str(val).strip() == "" or str(val).strip() == "-":
+                            return 0.0
+                        return float(val)
+                    except ValueError:
+                        return 0.0
+
+                frc = to_float(val_frc)
+                prod = to_float(val_prod)
+                cost = to_float(val_cost)
+                
+                if frc != 0 or prod != 0 or cost != 0:
+                    self.forecast_data[(norm_proj, norm_ggid, month_key)] = {
+                        "ncr": frc,
+                        "working_days": prod,
+                        "bill_amount": cost
+                    }
 
     def process(self):
         self.filtered_items = [i for i in self.items if i.matches_filter()]
@@ -164,7 +216,10 @@ class ICBPipeline:
                 hierarchy[cc_proj] = {
                     "project_name": item.project_name,
                     "consultants": OrderedDict(),
-                    "totals": {"working_days": 0.0, "raw_cost": 0.0, "bill_amount": 0.0},
+                    "totals": {
+                        "working_days": 0.0, "raw_cost": 0.0, "bill_amount": 0.0,
+                        "forecast_working_days": 0.0, "forecast_bill_amount": 0.0, "forecast_ncr": 0.0
+                    },
                 }
 
             cc_data = hierarchy[cc_proj]
@@ -178,6 +233,9 @@ class ICBPipeline:
                     "total_bill_amount": 0.0,
                     "total_raw_cost": 0.0,
                     "has_anomaly": False,
+                    "forecast_working_days": 0.0,
+                    "forecast_bill_amount": 0.0,
+                    "forecast_ncr": 0.0,
                 }
 
             cons = cc_data["consultants"][emp]
@@ -192,6 +250,52 @@ class ICBPipeline:
             cc_data["totals"]["working_days"] += (item.quantity or 0) / 8.0
             cc_data["totals"]["raw_cost"] += item.raw_cost or 0
             cc_data["totals"]["bill_amount"] += item.bill_amount or 0
+
+        # Integration des donnees Forecast
+        # Determiner les mois actifs pour le forecast
+        active_months = []
+        if month_filter:
+            active_months = [month_filter]
+        else:
+            if start_date and end_date:
+                start = datetime.strptime(start_date, "%Y-%m-%d").date()
+                end = datetime.strptime(end_date, "%Y-%m-%d").date()
+                for m in self.available_months:
+                    m_date = datetime.strptime(m + "-01", "%Y-%m-%d").date()
+                    if start <= m_date <= end: # Approximation simple
+                        active_months.append(m)
+            else:
+                active_months = self.available_months
+
+        for cc_proj, cc_data in hierarchy.items():
+            for emp, cons in cc_data["consultants"].items():
+                norm_proj = ExpenditureItem._normalize_key(cc_proj)
+                norm_emp = str(emp).strip().replace("6427_", "")
+                
+                sum_prod = 0.0
+                sum_cost = 0.0
+                for m in active_months:
+                    key = (norm_proj, norm_emp, m)
+                    if key in self.forecast_data:
+                        sum_prod += self.forecast_data[key]["working_days"]
+                        sum_cost += self.forecast_data[key]["bill_amount"]
+                
+                cons["forecast_working_days"] = sum_prod
+                cons["forecast_bill_amount"] = sum_cost
+                # Calcul du NCR Forecast agrege (Amount / Days * 8)
+                if sum_prod > 0:
+                    cons["forecast_ncr"] = (sum_cost / sum_prod) * 8.0
+                else:
+                    cons["forecast_ncr"] = 0.0
+
+                cc_data["totals"]["forecast_working_days"] += cons["forecast_working_days"]
+                cc_data["totals"]["forecast_bill_amount"] += cons["forecast_bill_amount"]
+            
+            # Calcul du NCR global pour le projet (informatif)
+            if cc_data["totals"]["forecast_working_days"] > 0:
+                cc_data["totals"]["forecast_ncr"] = (cc_data["totals"]["forecast_bill_amount"] / cc_data["totals"]["forecast_working_days"]) * 8.0
+            else:
+                cc_data["totals"]["forecast_ncr"] = 0.0
 
         # tri et serialisation
         result = []
@@ -354,6 +458,23 @@ def upload_file():
         "filtered_lines": len(pipeline.filtered_items),
         "available_months": pipeline.available_months,
     })
+
+@app.route("/api/upload_forecast", methods=["POST"])
+def upload_forecast():
+    if 'file' not in request.files:
+        return jsonify({"error": "Aucun fichier fourni."}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "Nom de fichier vide."}), 400
+        
+    try:
+        temp_path = os.path.join(tempfile.gettempdir(), file.filename)
+        file.save(temp_path)
+        pipeline.load_forecast(temp_path)
+        os.remove(temp_path)
+        return jsonify({"message": "Fichier Forecast charge avec succes."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/hierarchy")
