@@ -392,10 +392,32 @@ def export_excel():
     try:
         buffer = pipeline.export_to_excel(start_date, end_date)
         
-        # Build the desktop path
-        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        import os
         filename = f"icb_{start_date}_{end_date}.xlsx"
-        filepath = os.path.join(desktop, filename)
+        filepath = None
+        
+        try:
+            import webview
+            if webview.windows:
+                window = webview.windows[0]
+                result = window.create_file_dialog(
+                    webview.FileDialog.SAVE,
+                    save_filename=filename,
+                    file_types=('Excel Files (*.xlsx)',)
+                )
+                if result and isinstance(result, (tuple, list)) and len(result) > 0:
+                    filepath = result[0]
+                elif result and isinstance(result, str):
+                    filepath = result
+                else:
+                    return jsonify({"error": "Exportation annulée."}), 400
+        except ImportError:
+            pass
+            
+        if not filepath:
+            # Build the desktop path as fallback
+            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            filepath = os.path.join(desktop, filename)
         
         with open(filepath, "wb") as f:
             f.write(buffer.getvalue())

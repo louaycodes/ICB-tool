@@ -385,8 +385,19 @@ function applySearch(query) {
     const rows = document.querySelectorAll('#table-body tr');
 
     if (!q) {
-        // show everything
-        rows.forEach(r => r.style.display = "");
+        // restore visibility based on the collapsed state
+        rows.forEach(row => {
+            if (row.classList.contains("row-cc")) {
+                row.style.display = "";
+            } else if (row.dataset.cc) {
+                const ccRow = document.querySelector(`.row-cc[data-cc="${row.dataset.cc}"]`);
+                if (ccRow && ccRow.classList.contains("collapsed")) {
+                    row.style.display = "none";
+                } else {
+                    row.style.display = "";
+                }
+            }
+        });
         return;
     }
 
