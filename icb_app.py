@@ -239,13 +239,13 @@ class ICBPipeline:
             })
         return result
 
-    def export_to_excel(self, start_date, end_date):
+    def export_to_excel(self, month_filter, start_date, end_date):
         import io
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment
 
         # 1. Obtenir les items dans l'intervalle pour determiner les mois concernes
-        items_in_range = self._get_items(start_date=start_date, end_date=end_date)
+        items_in_range = self._get_items(month_filter=month_filter, start_date=start_date, end_date=end_date)
         months_in_range = sorted(list(set(i.month_key for i in items_in_range)))
 
         wb = Workbook()
@@ -272,14 +272,14 @@ class ICBPipeline:
 
                 data = self.hierarchy_data(month_filter=month, start_date=start_date, end_date=end_date)
 
-                # Headers : Projet Name, CC Project Number, et les totaux
-                headers = ["Project Name", "CC Project Number", "Working Days", "Bill Amount", "Raw Cost"]
+                # Headers : Project Name, CC Project Number, Working Days, Bill Amount, Forecast, Gap, Raw Cost, Comment
+                headers = ["Project Name", "CC Project Number", "Working Days", "Bill Amount", "Forecast bill amount", "Gap", "Raw Cost", "Comment"]
                 ws.append(headers)
-                for col in range(1, 6):
+                for col in range(1, 9):
                     cell = ws.cell(row=1, column=col)
                     cell.fill = header_fill
                     cell.font = header_font
-                    if col >= 3:
+                    if col >= 3 and col <= 7:
                         cell.alignment = right_align
 
                 current_row = 2
@@ -289,13 +289,16 @@ class ICBPipeline:
                         cc['cc_project_number'],
                         cc['totals']['working_days'],
                         cc['totals']['bill_amount'],
-                        cc['totals']['raw_cost']
+                        "", # Forecast
+                        f"=D{current_row}-E{current_row}", # Gap
+                        cc['totals']['raw_cost'],
+                        ""  # Comment
                     ])
-                    for col in range(1, 6):
+                    for col in range(1, 9):
                         cell = ws.cell(row=current_row, column=col)
                         cell.fill = cc_fill
                         cell.font = cc_font
-                        if col >= 3:
+                        if col >= 3 and col <= 7:
                             cell.alignment = right_align
                     current_row += 1
 
@@ -304,7 +307,10 @@ class ICBPipeline:
                 ws.column_dimensions['B'].width = 25
                 ws.column_dimensions['C'].width = 15
                 ws.column_dimensions['D'].width = 15
-                ws.column_dimensions['E'].width = 15
+                ws.column_dimensions['E'].width = 20
+                ws.column_dimensions['F'].width = 15
+                ws.column_dimensions['G'].width = 15
+                ws.column_dimensions['H'].width = 30
 
         buffer = io.BytesIO()
         wb.save(buffer)
@@ -358,8 +364,21 @@ def get_hierarchy():
     month = request.args.get("month", None)
     if month == "all" or month == "":
         month = None
-    data = pipeline.hierarchy_data(month)
+    start_date = request.args.get("start_date", None)
+    end_date = request.args.get("end_date", None)
+    data = pipeline.hierarchy_data(month_filter=month, start_date=start_date, end_date=end_date)
     return jsonify(data)
+
+@app.route("/api/months")
+def get_months():
+    global pipeline
+    if pipeline is None:
+        return jsonify({"error": "Aucun fichier charge."}), 400
+    start_date = request.args.get("start_date", None)
+    end_date = request.args.get("end_date", None)
+    items = pipeline._get_items(start_date=start_date, end_date=end_date)
+    months = sorted(list(set(i.month_key for i in items)))
+    return jsonify(months)
 
 
 @app.route("/api/transactions")
@@ -372,10 +391,32 @@ def get_transactions():
     month = request.args.get("month", None)
     if month == "all" or month == "":
         month = None
+    start_date = request.args.get("start_date", None)
+    end_date = request.args.get("end_date", None)
+    
     if not emp or not cc_proj:
         return jsonify({"error": "Parametres employee et cc_project requis."}), 400
-    data = pipeline.consultant_transactions(emp, cc_proj, month)
-    return jsonify(data)
+        
+    items = pipeline._get_items(month_filter=month, start_date=start_date, end_date=end_date)
+    txns = [
+        i for i in items
+        if i.employee_number == emp and i.cc_project_number == cc_proj
+    ]
+    result = []
+    for t in txns:
+        result.append({
+            "item_id": t.item_id,
+            "date": t.date.strftime("%Y-%m-%d") if t.date else "",
+            "expenditure_type": t.expenditure_type,
+            "invoice_type": t.invoice_type or "",
+            "working_days": round((t.quantity or 0) / 8.0, 2),
+            "ncr": round(t.bill_rate, 2) if t.bill_rate else 0,
+            "raw_cost": round(t.raw_cost, 2) if t.raw_cost else 0,
+            "bill_amount": round(t.bill_amount, 2) if t.bill_amount else 0,
+            "ncr_correlation": round(t.ncr_correlation, 4) if t.ncr_correlation is not None else None,
+            "has_anomaly": t.has_anomaly,
+        })
+    return jsonify(result)
 
 
 @app.route("/api/export")
@@ -384,16 +425,23 @@ def export_excel():
     import os
     if pipeline is None:
         return jsonify({"error": "Aucun fichier charge."}), 400
-    start_date = request.args.get("start_date")
-    end_date = request.args.get("end_date")
-    if not start_date or not end_date:
-        return jsonify({"error": "Dates manquantes."}), 400
+    
+    month = request.args.get("month", None)
+    if month == "all" or month == "":
+        month = None
+    start_date = request.args.get("start_date", None)
+    end_date = request.args.get("end_date", None)
     
     try:
-        buffer = pipeline.export_to_excel(start_date, end_date)
+        buffer = pipeline.export_to_excel(month_filter=month, start_date=start_date, end_date=end_date)
         
         import os
-        filename = f"icb_{start_date}_{end_date}.xlsx"
+        if start_date and end_date:
+            filename = f"icb_{start_date}_{end_date}.xlsx"
+        elif month:
+            filename = f"icb_{month}.xlsx"
+        else:
+            filename = "icb_export.xlsx"
         filepath = None
         
         try:

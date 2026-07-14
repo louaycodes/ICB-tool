@@ -304,8 +304,37 @@ body {
     white-space: nowrap;
 }
 
+.h-table thead tr.sub-header-row th {
+    top: 39px; /* decale la deuxieme ligne sous la premiere lors du scroll */
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+.sub-header {
+    font-size: 0.82rem;
+    color: #f1f5f9;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: center !important;
+}
+
+.col-sep {
+    border-right: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.col-group-right {
+    border-right: 1px solid rgba(255, 255, 255, 0.35);
+}
+
 .h-table th.num {
     text-align: right;
+}
+
+.h-table td {
+    border-right: 1px solid var(--color-border);
+}
+.h-table td:last-child {
+    border-right: none;
 }
 
 /* cc project row (top-level grouping) */
@@ -316,7 +345,11 @@ body {
     padding: 9px 14px;
     cursor: pointer;
     border-bottom: 1px solid var(--color-primary-light);
+    border-right: 1px solid rgba(255, 255, 255, 0.15) !important;
     font-size: 0.9rem;
+}
+.row-cc td:last-child {
+    border-right: none !important;
 }
 
 .row-cc td .toggle-icon {
