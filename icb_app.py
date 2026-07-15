@@ -144,45 +144,45 @@ class ICBPipeline:
             
             # En-tetes reellement en ligne 6, donnees a partir de la ligne 7
             for row in ws.iter_rows(min_row=7, values_only=True):
-            proj_num = row[0]
-            ggid = row[2]
-            
-            if proj_num is None or ggid is None:
-                continue
+                proj_num = row[0]
+                ggid = row[2]
                 
-            norm_proj = ExpenditureItem._normalize_key(proj_num)
-            norm_ggid = str(ggid).strip().replace("6427_", "")
-            
-            for m in range(12):
-                month_str = f"{m+1:02d}"
-                month_key = f"{current_year}-{month_str}"
-                
-                base_idx = 4 + (m * 6)
-                if base_idx + 4 >= len(row):
-                    break
+                if proj_num is None or ggid is None:
+                    continue
                     
-                val_frc = row[base_idx + 1]
-                val_prod = row[base_idx + 3]
-                val_cost = row[base_idx + 4]
+                norm_proj = ExpenditureItem._normalize_key(proj_num)
+                norm_ggid = str(ggid).strip().replace("6427_", "")
                 
-                def to_float(val):
-                    try:
-                        if val is None or str(val).strip() == "" or str(val).strip() == "-":
+                for m in range(12):
+                    month_str = f"{m+1:02d}"
+                    month_key = f"{current_year}-{month_str}"
+                    
+                    base_idx = 4 + (m * 6)
+                    if base_idx + 4 >= len(row):
+                        break
+                        
+                    val_frc = row[base_idx + 1]
+                    val_prod = row[base_idx + 3]
+                    val_cost = row[base_idx + 4]
+                    
+                    def to_float(val):
+                        try:
+                            if val is None or str(val).strip() == "" or str(val).strip() == "-":
+                                return 0.0
+                            return float(val)
+                        except ValueError:
                             return 0.0
-                        return float(val)
-                    except ValueError:
-                        return 0.0
-
-                frc = to_float(val_frc)
-                prod = to_float(val_prod)
-                cost = to_float(val_cost)
-                
-                if frc != 0 or prod != 0 or cost != 0:
-                    self.forecast_data[(norm_proj, norm_ggid, month_key)] = {
-                        "ncr": frc,
-                        "working_days": prod,
-                        "bill_amount": cost
-                    }
+    
+                    frc = to_float(val_frc)
+                    prod = to_float(val_prod)
+                    cost = to_float(val_cost)
+                    
+                    if frc != 0 or prod != 0 or cost != 0:
+                        self.forecast_data[(norm_proj, norm_ggid, month_key)] = {
+                            "ncr": frc,
+                            "working_days": prod,
+                            "bill_amount": cost
+                        }
         finally:
             wb.close()
 
