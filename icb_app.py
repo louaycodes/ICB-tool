@@ -133,16 +133,17 @@ class ICBPipeline:
         df_raw = fast_load_excel(path)
         self.items = [ExpenditureItem(row) for row in df_raw.to_dict("records")]
 
-    def load_forecast(self, path):
-        """Parse un fichier Forecast et remplit self.forecast_data."""
+    def load_forecast(self, file_stream):
+        """Parse un fichier Forecast et remplit self.forecast_data depuis un flux en memoire."""
         import openpyxl
         from datetime import datetime
-        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-        ws = wb.active
-        current_year = datetime.now().year
-        
-        # En-tetes reellement en ligne 6, donnees a partir de la ligne 7
-        for row in ws.iter_rows(min_row=7, values_only=True):
+        wb = openpyxl.load_workbook(file_stream, read_only=True, data_only=True)
+        try:
+            ws = wb.active
+            current_year = datetime.now().year
+            
+            # En-tetes reellement en ligne 6, donnees a partir de la ligne 7
+            for row in ws.iter_rows(min_row=7, values_only=True):
             proj_num = row[0]
             ggid = row[2]
             
@@ -182,6 +183,8 @@ class ICBPipeline:
                         "working_days": prod,
                         "bill_amount": cost
                     }
+        finally:
+            wb.close()
 
     def process(self):
         self.filtered_items = [i for i in self.items if i.matches_filter()]
@@ -468,10 +471,9 @@ def upload_forecast():
         return jsonify({"error": "Nom de fichier vide."}), 400
         
     try:
-        temp_path = os.path.join(tempfile.gettempdir(), file.filename)
-        file.save(temp_path)
-        pipeline.load_forecast(temp_path)
-        os.remove(temp_path)
+        # Traitement entierement en memoire pour eviter les problemes de lock Windows
+        file_stream = io.BytesIO(file.read())
+        pipeline.load_forecast(file_stream)
         return jsonify({"message": "Fichier Forecast charge avec succes."}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
