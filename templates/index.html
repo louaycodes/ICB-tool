@@ -157,6 +157,10 @@ async function uploadFile(input) {
         document.getElementById("global-filters").style.display = "flex";
         document.getElementById("month-bar").classList.add("visible");
         document.getElementById("btn-export").style.display = "inline-block";
+        
+        // Cacher le bouton ICB car on ne permet pas de recharger par dessus
+        document.getElementById("btn-upload").style.display = "none";
+        
         // Afficher le bouton forecast apres avoir upload l'ICB
         document.getElementById("btn-upload-forecast").style.display = "inline-block";
         document.getElementById("search-wrapper").style.display = "flex";
@@ -476,48 +480,47 @@ function applySearch(query) {
         return;
     }
 
-    // track which cc projects have visible consultants
+    // track which cc projects match the query (either directly or via their consultants)
     const visibleCCs = new Set();
 
-    // first pass: check consultant rows (text + cc number + project name)
     rows.forEach(row => {
-        if (!row.classList.contains("row-consultant")) return;
-        const text = row.textContent.toLowerCase();
-        const cc = (row.dataset.cc || "").toLowerCase();
-        const projectName = (row.dataset.projectname || "").toLowerCase();
-        const matches = text.includes(q) || cc.includes(q) || projectName.includes(q);
-        row.style.display = matches ? "" : "none";
-        if (matches) {
-            visibleCCs.add(row.dataset.cc);
+        if (row.classList.contains("row-consultant")) {
+            const text = row.textContent.toLowerCase();
+            const cc = (row.dataset.cc || "").toLowerCase();
+            const projectName = (row.dataset.projectname || "").toLowerCase();
+            if (text.includes(q) || cc.includes(q) || projectName.includes(q)) {
+                visibleCCs.add(row.dataset.cc);
+            }
+        } else if (row.classList.contains("row-cc")) {
+            const ccText = row.textContent.toLowerCase();
+            if (ccText.includes(q)) {
+                visibleCCs.add(row.dataset.cc);
+            }
         }
     });
 
-    // also check CC rows directly (project name is in their text content)
-    rows.forEach(row => {
-        if (!row.classList.contains("row-cc")) return;
-        const ccText = row.textContent.toLowerCase();
-        if (ccText.includes(q)) {
-            visibleCCs.add(row.dataset.cc);
-        }
-    });
-
-    // show all consultant rows for matched CC projects
-    rows.forEach(row => {
-        if (row.classList.contains("row-consultant") && visibleCCs.has(row.dataset.cc)) {
-            row.style.display = "";
-        }
-    });
-
-    // second pass: show/hide cc and totals rows
+    // Update display based on matched CCs AND their collapsed state
     rows.forEach(row => {
         if (row.classList.contains("row-cc")) {
+            // Show the CC row only if it matches
             row.style.display = visibleCCs.has(row.dataset.cc) ? "" : "none";
-        } else if (row.classList.contains("row-totals")) {
-            row.style.display = visibleCCs.has(row.dataset.cc) ? "" : "none";
+        } else if (row.dataset.cc) {
+            // For consultants, totals, and inline details
+            if (!visibleCCs.has(row.dataset.cc)) {
+                row.style.display = "none";
+            } else {
+                // The project matches. We only show the child rows if the project is NOT collapsed.
+                const ccRow = document.querySelector(`.row-cc[data-cc="${row.dataset.cc}"]`);
+                if (ccRow && ccRow.classList.contains("collapsed")) {
+                    row.style.display = "none";
+                } else {
+                    // It's expanded and matches, so show it
+                    row.style.display = "";
+                }
+            }
         }
     });
 }
-
 // -- Escape HTML --
 function esc(val) {
     if (val == null) return "";

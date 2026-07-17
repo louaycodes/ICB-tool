@@ -610,4 +610,4 @@ def start_server(port=5050):
     import logging
     log = logging.getLogger("werkzeug")
     log.setLevel(logging.ERROR)
-    app.run(debug=False, port=port, use_reloader=False)
+    app.run(debug=True, port=port, use_reloader=False)
