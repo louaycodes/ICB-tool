@@ -133,11 +133,11 @@ class ICBPipeline:
         df_raw = fast_load_excel(path)
         self.items = [ExpenditureItem(row) for row in df_raw.to_dict("records")]
 
-    def load_forecast(self, file_stream):
-        """Parse un fichier Forecast et remplit self.forecast_data depuis un flux en memoire."""
+    def load_forecast(self, path):
+        """Parse un fichier Forecast et remplit self.forecast_data."""
         import openpyxl
         from datetime import datetime
-        wb = openpyxl.load_workbook(file_stream, read_only=True, data_only=True)
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         try:
             ws = wb.active
             current_year = datetime.now().year
@@ -464,19 +464,23 @@ def upload_file():
 
 @app.route("/api/upload_forecast", methods=["POST"])
 def upload_forecast():
-    if 'file' not in request.files:
-        return jsonify({"error": "Aucun fichier fourni."}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "Nom de fichier vide."}), 400
-        
+    if "file" not in request.files:
+        return jsonify({"error": "Aucun fichier envoye."}), 400
+    f = request.files["file"]
+    if not f.filename.endswith(".xlsx"):
+        return jsonify({"error": "Le fichier doit etre au format .xlsx"}), 400
+
+    # sauvegarde temporaire
+    upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    path = os.path.join(upload_dir, "current_forecast.xlsx")
+    f.save(path)
+
     try:
-        # Traitement entierement en memoire pour eviter les problemes de lock Windows
-        file_stream = io.BytesIO(file.read())
-        pipeline.load_forecast(file_stream)
+        pipeline.load_forecast(path)
         return jsonify({"message": "Fichier Forecast charge avec succes."}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/api/hierarchy")
