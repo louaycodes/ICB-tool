@@ -283,6 +283,16 @@ async function applyGlobalDateFilter() {
     await loadHierarchy();
 }
 
+// -- Gap detection: compare ICB vs FORECAST values --
+function hasGap(icb, forecast) {
+    // Only flag a gap when BOTH values are present (non-null, > 0)
+    if (!icb || !forecast) return false;
+    // Tolerance: round to 2 decimals, then check absolute diff
+    var a = Math.round(icb * 100) / 100;
+    var b = Math.round(forecast * 100) / 100;
+    return Math.abs(a - b) > 0.01;
+}
+
 // -- Render hierarchy table --
 function renderHierarchy(ccProjects) {
     const tbody = document.getElementById("table-body");
@@ -296,6 +306,13 @@ function renderHierarchy(ccProjects) {
     }
 
     ccProjects.forEach(cc => {
+        // Pre-compute gap flags for CC project totals
+        const ccGapWd = hasGap(cc.totals.working_days, cc.totals.forecast_working_days);
+        const ccGapBa = hasGap(cc.totals.bill_amount, cc.totals.forecast_bill_amount);
+        const ccGapNcr = hasGap(cc.totals.forecast_ncr, cc.totals.forecast_ncr) ? false :
+                         (cc.totals.forecast_working_days > 0 ? hasGap(null, cc.totals.forecast_ncr) : false);
+        // NCR ICB is empty at CC level, so no NCR gap at CC level
+
         // -- CC Project row (top-level) --
         const ccRow = document.createElement("tr");
         ccRow.className = "row-cc collapsed";
@@ -305,18 +322,23 @@ function renderHierarchy(ccProjects) {
             : esc(cc.cc_project_number);
         ccRow.innerHTML =
             '<td colspan="4"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
-            '<td></td>' + // NCR ICB
+            '<td></td>' + // NCR ICB (empty at CC level)
             '<td class="num" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
-            '<td class="num">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
-            '<td class="num" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
-            '<td class="num">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
-            '<td class="num" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
+            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
             '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>';
         ccRow.onclick = () => toggleCC(cc.cc_project_number);
         tbody.appendChild(ccRow);
 
         // -- Consultant rows --
         cc.consultants.forEach((cons, idx) => {
+            // Pre-compute gap flags per consultant
+            const gapNcr = hasGap(cons.ncr, cons.forecast_ncr);
+            const gapWd = hasGap(cons.working_days, cons.forecast_working_days);
+            const gapBa = hasGap(cons.total_bill_amount, cons.forecast_bill_amount);
+
             const consRow = document.createElement("tr");
             let cls = "row-consultant";
             if (idx % 2 === 1) cls += " alt";
@@ -331,12 +353,12 @@ function renderHierarchy(ccProjects) {
                 '<td>' + esc(cons.employee_id) + '</td>' +
                 '<td>' + esc(cons.name) + '</td>' +
                 '<td>' + esc(cons.grade) + '</td>' +
-                '<td class="num">' + fmt(cons.ncr) + '</td>' + // NCR ICB
-                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_ncr) : '') + '</td>' + // NCR FORECAST
-                '<td class="num">' + fmt(cons.working_days) + '</td>' + // WD ICB
-                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_working_days) : '') + '</td>' + // WD FORECAST
-                '<td class="num">' + fmt(cons.total_bill_amount) + '</td>' + // BA ICB
-                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+                '<td class="num' + (gapNcr ? ' cell-gap' : '') + '">' + fmt(cons.ncr) + '</td>' + // NCR ICB
+                '<td class="num' + (gapNcr ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+                '<td class="num' + (gapWd ? ' cell-gap' : '') + '">' + fmt(cons.working_days) + '</td>' + // WD ICB
+                '<td class="num' + (gapWd ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_working_days) : '') + '</td>' + // WD FORECAST
+                '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + fmt(cons.total_bill_amount) + '</td>' + // BA ICB
+                '<td class="num' + (gapBa ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
                 '<td class="num">' + fmt(cons.total_raw_cost) + '</td>';
             consRow.dataset.consName = cons.name;
             consRow.onclick = (e) => { e.stopPropagation(); toggleDetail(consRow); };
@@ -353,10 +375,10 @@ function renderHierarchy(ccProjects) {
             '<td colspan="3">TOTAL ' + esc(cc.cc_project_number) + '</td>' +
             '<td></td>' + // NCR ICB
             '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
-            '<td class="num">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
-            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
-            '<td class="num">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
-            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
+            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
             '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>';
         tbody.appendChild(totRow);
     });

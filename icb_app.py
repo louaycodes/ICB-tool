@@ -128,6 +128,7 @@ class ICBPipeline:
         self.filtered_items = []
         self.available_months = []
         self.forecast_data = {}  # (cc_proj, emp, month_key) -> {"ncr": float, "working_days": float, "bill_amount": float}
+        self.forecast_names = {}  # (norm_proj, norm_ggid) -> employee_name (from forecast file)
 
     def load(self, path):
         df_raw = fast_load_excel(path)
@@ -492,6 +493,11 @@ class ICBPipeline:
                 norm_proj = ExpenditureItem._normalize_key(current_proj)
                 norm_ggid = str(ggid_val).strip().replace("6427_", "")
 
+                # Stocker le nom du consultant depuis le forecast
+                emp_name_val = _safe(col_emp_name)
+                if emp_name_val is not None:
+                    self.forecast_names[(norm_proj, norm_ggid)] = str(emp_name_val).strip()
+
                 projects_found.add(norm_proj)
                 consultants_by_project.setdefault(norm_proj, set()).add(
                     (str(ggid_val).strip(), norm_ggid)
@@ -806,15 +812,114 @@ class ICBPipeline:
 
                 current_row = 2
                 for cc in data:
+                    norm_proj = ExpenditureItem._normalize_key(cc['cc_project_number'])
+
+                    # --- Col 5 : Forecast Bill Amount ---
+                    # Distinguer "aucune donnee forecast" (vide) de "forecast = 0" (ecrire 0)
+                    has_any_forecast = False
+                    forecast_ba_total = 0.0
+                    for fk, fd in self.forecast_data.items():
+                        if fk[0] == norm_proj and fk[2] == month:
+                            has_any_forecast = True
+                            forecast_ba_total += fd["bill_amount"]
+
+                    forecast_cell_value = round(forecast_ba_total, 2) if has_any_forecast else ""
+
+                    # --- Col 8 : Comment auto-genere ---
+                    comment = ""
+                    icb_ba = cc['totals']['bill_amount']
+                    gap_val = round(icb_ba - forecast_ba_total, 2) if has_any_forecast else 0
+
+                    if has_any_forecast and abs(gap_val) > 0.01:
+                        # Identifier les causes par consultant
+                        # 1. Construire les sets ICB et Forecast (normalises)
+                        icb_emps = {}  # norm_emp -> cons dict
+                        for cons in cc['consultants']:
+                            ne = str(cons['employee_id']).strip().replace("6427_", "")
+                            icb_emps[ne] = cons
+
+                        forecast_emps = set()
+                        for fk in self.forecast_data:
+                            if fk[0] == norm_proj and fk[2] == month:
+                                forecast_emps.add(fk[1])
+
+                        icb_set = set(icb_emps.keys())
+
+                        # 2. Consultants absents
+                        only_icb = icb_set - forecast_emps      # dans ICB, pas dans Forecast
+                        only_forecast = forecast_emps - icb_set  # dans Forecast, pas dans ICB
+
+                        # Helper : formater un identifiant consultant avec son nom
+                        def _id_name(ne, source='icb'):
+                            """Retourne 'ID (Nom)' ou juste 'ID' si nom inconnu."""
+                            name = None
+                            if source == 'icb' and ne in icb_emps:
+                                name = icb_emps[ne].get('name')
+                            if not name:
+                                name = self.forecast_names.get((norm_proj, ne))
+                            if name:
+                                return f"{ne} ({name})"
+                            return ne
+
+                        # Helper : limiter la liste a 5 elements max
+                        def _limit_list(entries, max_show=5):
+                            if len(entries) <= max_show:
+                                return ", ".join(entries)
+                            shown = ", ".join(entries[:max_show])
+                            return f"{shown} ... et {len(entries) - max_show} autre(s)"
+
+                        # 3. Pour les consultants communs, detecter ecarts NCR / WD
+                        common = icb_set & forecast_emps
+                        details_wd = []   # [(id_name_str, wd_icb, wd_fc), ...]
+                        details_ncr = []  # [(id_name_str, ncr_icb, ncr_fc), ...]
+                        for ne in sorted(common):
+                            cons = icb_emps[ne]
+                            fk = (norm_proj, ne, month)
+                            fd = self.forecast_data.get(fk)
+                            if not fd:
+                                continue
+                            label = _id_name(ne, 'icb')
+                            # Comparaison WD
+                            wd_icb = round(cons['working_days'], 2)
+                            wd_fc = round(fd['working_days'], 2)
+                            if wd_icb and wd_fc and abs(wd_icb - wd_fc) > 0.01:
+                                details_wd.append(f"{label} ICB={wd_icb}j/Forecast={wd_fc}j")
+                            # Comparaison NCR
+                            ncr_icb = round(cons['ncr'], 2)
+                            ncr_fc = round(fd['ncr'], 2)
+                            if ncr_icb and ncr_fc and abs(ncr_icb - ncr_fc) > 0.01:
+                                details_ncr.append(f"{label} ICB={ncr_icb}/Forecast={ncr_fc}")
+
+                        # 4. Composer le commentaire
+                        parts = []
+
+                        if details_wd:
+                            parts.append(f"Ecart lie aux jours travailles : {_limit_list(details_wd)}")
+                        if details_ncr:
+                            parts.append(f"Ecart lie au taux (NCR) : {_limit_list(details_ncr)}")
+
+                        if only_forecast:
+                            entries = [_id_name(ne, 'forecast') for ne in sorted(only_forecast)]
+                            parts.append(f"Consultant(s) absent(s) de l'ICB : {_limit_list(entries)}")
+
+                        if only_icb:
+                            entries = [_id_name(ne, 'icb') for ne in sorted(only_icb)]
+                            parts.append(f"Consultant(s) absent(s) du Forecast : {_limit_list(entries)}")
+
+                        if not parts:
+                            parts.append("Ecart non explique par jours travailles ou taux — a verifier manuellement")
+
+                        comment = " ; ".join(parts)
+
                     ws.append([
                         cc['project_name'] or "",
                         cc['cc_project_number'],
                         cc['totals']['working_days'],
                         cc['totals']['bill_amount'],
-                        "", # Forecast
-                        f"=D{current_row}-E{current_row}", # Gap
+                        forecast_cell_value,       # Forecast bill amount
+                        f"=D{current_row}-E{current_row}", # Gap (formule Excel)
                         cc['totals']['raw_cost'],
-                        ""  # Comment
+                        comment                    # Comment auto-genere
                     ])
                     for col in range(1, 9):
                         cell = ws.cell(row=current_row, column=col)
@@ -832,7 +937,7 @@ class ICBPipeline:
                 ws.column_dimensions['E'].width = 20
                 ws.column_dimensions['F'].width = 15
                 ws.column_dimensions['G'].width = 15
-                ws.column_dimensions['H'].width = 30
+                ws.column_dimensions['H'].width = 60
 
         buffer = io.BytesIO()
         wb.save(buffer)
