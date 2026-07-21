@@ -149,38 +149,146 @@ class ICBPipeline:
         """
         import openpyxl
         from datetime import datetime
+
+        print("\n" + "=" * 70)
+        print("[FORECAST IMPORT] Debut du chargement du fichier Forecast")
+        print("=" * 70)
+
+        # =================================================================
+        # 1. VALIDATION STRUCTURELLE DE BASE
+        #    Ouverture en mode normal (pas read_only) pour acceder
+        #    aux merged_cells et aux dimensions reelles.
+        # =================================================================
+        print("\n--- 1. VALIDATION STRUCTURELLE DE BASE ---")
+
+        wb_check = openpyxl.load_workbook(path, data_only=True)
+        ws_check = wb_check.active
+
+        print(f"  Feuille active : '{ws_check.title}'")
+        print(f"  Dimensions declarees : {ws_check.dimensions}")
+
+        # Verification des en-tetes ligne 6
+        expected_headers = {
+            1: "Project Num",
+            2: "Project Name",
+            3: "GGID",
+            4: "Employee Name",
+            7: "Grade",
+        }
+        headers_ok = True
+        for col_1idx, expected_name in expected_headers.items():
+            actual = ws_check.cell(row=6, column=col_1idx).value
+            if actual != expected_name:
+                print(f"  [WARNING] Colonne {col_1idx} (ligne 6) : attendu "
+                      f"'{expected_name}', trouve '{actual}'")
+                headers_ok = False
+            else:
+                print(f"  [OK] Colonne {col_1idx} : '{actual}'")
+        if headers_ok:
+            print("  => Tous les en-tetes valides.")
+
+        total_cols = ws_check.max_column
+        expected_cols = 87
+        print(f"  Nombre de colonnes detectees : {total_cols} (attendu : {expected_cols})")
+        if total_cols != expected_cols:
+            print(f"  [WARNING] Nombre de colonnes inattendu ({total_cols} vs {expected_cols})")
+
+        # =================================================================
+        # 2. DETECTION DES BLOCS PROJETS (via plages fusionnees colonne A)
+        # =================================================================
+        print("\n--- 2. DETECTION DES BLOCS PROJETS ---")
+
+        merged_ranges_a = sorted(
+            [mr for mr in ws_check.merged_cells.ranges if mr.min_col == 1],
+            key=lambda r: r.min_row,
+        )
+
+        detected_blocks = []   # [(proj_num, start_row, end_row, n_cons, has_total)]
+
+        if merged_ranges_a:
+            print(f"  {len(merged_ranges_a)} plage(s) fusionnee(s) en colonne A :")
+            for mr in merged_ranges_a:
+                anchor_val = ws_check.cell(row=mr.min_row, column=1).value
+                n_cons = mr.max_row - mr.min_row + 1
+                # Verifier la ligne Total juste apres le bloc
+                total_row = mr.max_row + 1
+                total_ggid = ws_check.cell(row=total_row, column=3).value
+                total_emp  = ws_check.cell(row=total_row, column=4).value
+                has_total = (total_ggid is None and total_emp is None)
+                detected_blocks.append(
+                    (anchor_val, mr.min_row, mr.max_row, n_cons, has_total)
+                )
+                print(
+                    f"    Projet '{anchor_val}' : lignes {mr.min_row}-{mr.max_row} "
+                    f"({n_cons} consultants), "
+                    f"ligne Total={total_row} "
+                    f"{'[detectee et exclue]' if has_total else '[NON detectee — WARNING]'}"
+                )
+        else:
+            print("  [WARNING] Aucune plage fusionnee trouvee en colonne A.")
+            print("  Tentative de detection par rupture de valeur :")
+            proj_rows = {}
+            for row_cells in ws_check.iter_rows(min_row=7, min_col=1, max_col=4,
+                                                 values_only=False):
+                val = row_cells[0].value
+                if val is not None:
+                    proj_rows.setdefault(val, []).append(row_cells[0].row)
+            if proj_rows:
+                for proj_val, rows in proj_rows.items():
+                    print(f"    Projet '{proj_val}' : present aux lignes {rows}")
+            else:
+                print("    [WARNING] Aucun Project Num trouve du tout.")
+
+        wb_check.close()
+
+        # =================================================================
+        # Parsing principal (read_only pour la performance)
+        # =================================================================
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         try:
             ws = wb.active
             current_year = datetime.now().year
-            current_proj = None  # pour propager le project num aux lignes suivantes
-            
+            current_proj = None
+
+            # Compteurs de diagnostic
+            projects_found = set()          # projets normalises
+            consultants_by_project = {}     # proj_norm -> set((ggid_brut, ggid_norm))
+            rows_processed = 0
+            rows_skipped_total = 0
+
             for row in ws.iter_rows(min_row=7, values_only=True):
                 proj_num = row[0]   # Col A (0-idx 0)
                 ggid = row[2]       # Col C (0-idx 2)
-                
+
                 # Mettre à jour le projet courant si la ligne en contient un
                 if proj_num is not None:
                     current_proj = proj_num
-                
+
                 # Ignorer les lignes de total (GGID vide = ligne résumé projet)
                 if ggid is None:
+                    rows_skipped_total += 1
                     continue
-                    
+
+                rows_processed += 1
                 norm_proj = ExpenditureItem._normalize_key(current_proj)
                 norm_ggid = str(ggid).strip().replace("6427_", "")
-                
+
+                projects_found.add(norm_proj)
+                consultants_by_project.setdefault(norm_proj, set()).add(
+                    (str(ggid).strip(), norm_ggid)
+                )
+
                 for m in range(12):
                     month_str = f"{m+1:02d}"
                     month_key = f"{current_year}-{month_str}"
-                    
+
                     # Chaque bloc mois = 6 colonnes, démarrant à 0-idx 6
                     # Mois 0 (Jan) : cols 6..11, Mois 1 (Feb) : cols 12..17, etc.
                     base_idx = 6 + (m * 6)
-                    
+
                     if base_idx + 4 >= len(row):
                         break
-                    
+
                     # Grade = base_idx + 0
                     # F.RC  = base_idx + 1  → NCR forecast
                     # Vaca  = base_idx + 2
@@ -190,7 +298,7 @@ class ICBPipeline:
                     val_frc = row[base_idx + 1]
                     val_prod = row[base_idx + 3]
                     val_cost = row[base_idx + 4]
-                    
+
                     def to_float(val):
                         try:
                             if val is None or str(val).strip() == "" or str(val).strip() == "-":
@@ -198,17 +306,87 @@ class ICBPipeline:
                             return float(val)
                         except ValueError:
                             return 0.0
-    
+
                     frc = to_float(val_frc)
                     prod = to_float(val_prod)
                     cost = to_float(val_cost)
-                    
+
                     if frc != 0 or prod != 0 or cost != 0:
                         self.forecast_data[(norm_proj, norm_ggid, month_key)] = {
                             "ncr": frc,
                             "working_days": prod,
                             "bill_amount": cost
                         }
+
+            # =============================================================
+            # 3. MAPPING AVEC LE FICHIER ICB
+            # =============================================================
+            print("\n--- 3. MAPPING AVEC LE FICHIER ICB ---")
+
+            # Extraire les projets et consultants connus de l'ICB
+            icb_projects = set()
+            icb_employees_by_project = {}   # proj_norm -> set(emp_norm)
+            for item in self.filtered_items:
+                p = ExpenditureItem._normalize_key(item.cc_project_number)
+                e = str(item.employee_number).strip().replace("6427_", "")
+                icb_projects.add(p)
+                icb_employees_by_project.setdefault(p, set()).add(e)
+
+            # -- Projets --
+            matched_projects = projects_found & icb_projects
+            unmatched_projects = projects_found - icb_projects
+
+            print(f"  Projets Forecast : {len(projects_found)}")
+            print(f"  Projets ICB      : {len(icb_projects)}")
+            print(f"  Projets matches  : {len(matched_projects)}/{len(projects_found)}")
+            if matched_projects:
+                for p in sorted(matched_projects):
+                    print(f"    [MATCH]    {p}")
+            if unmatched_projects:
+                print(f"  [WARNING] {len(unmatched_projects)} projet(s) Forecast "
+                      f"NON trouves dans l'ICB :")
+                for p in sorted(unmatched_projects):
+                    print(f"    [NO MATCH] {p}")
+
+            # -- Consultants --
+            total_matched_cons = 0
+            total_unmatched_cons = 0
+            for proj_norm, cons_set in consultants_by_project.items():
+                icb_emps = icb_employees_by_project.get(proj_norm, set())
+                for raw_ggid, norm_ggid in sorted(cons_set):
+                    if norm_ggid in icb_emps:
+                        total_matched_cons += 1
+                    else:
+                        total_unmatched_cons += 1
+                        print(
+                            f"  [NO MATCH] Consultant brut='{raw_ggid}', "
+                            f"normalise='{norm_ggid}' dans projet '{proj_norm}' "
+                            f"— absent de l'ICB"
+                        )
+
+            total_cons = total_matched_cons + total_unmatched_cons
+            print(f"  Consultants matches : {total_matched_cons}/{total_cons}")
+            if total_unmatched_cons:
+                print(f"  [WARNING] {total_unmatched_cons} consultant(s) non matches")
+
+            # =============================================================
+            # 4. RESULTAT FINAL
+            # =============================================================
+            cells_filled = len(self.forecast_data) * 3   # NCR + WD + BA par entree
+
+            print("\n--- 4. RESULTAT FINAL ---")
+            print(f"  Lignes consultants traitees : {rows_processed}")
+            print(f"  Lignes Total/vides ignorees : {rows_skipped_total}")
+            print(f"  Entrees forecast_data       : {len(self.forecast_data)}")
+            print(f"  Cellules FORECAST remplies   : {cells_filled} "
+                  f"(NCR + Working Days + Bill Amount)")
+            print(
+                f"\n[FORECAST IMPORT] {len(projects_found)} projets detectes, "
+                f"{total_matched_cons}/{total_cons} consultants matches, "
+                f"{cells_filled} cellules remplies"
+            )
+            print("=" * 70 + "\n")
+
         finally:
             wb.close()
 
