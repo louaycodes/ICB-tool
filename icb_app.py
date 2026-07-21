@@ -134,33 +134,59 @@ class ICBPipeline:
         self.items = [ExpenditureItem(row) for row in df_raw.to_dict("records")]
 
     def load_forecast(self, path):
-        """Parse un fichier Forecast et remplit self.forecast_data."""
+        """Parse un fichier Forecast et remplit self.forecast_data.
+        
+        Structure du fichier Forecast :
+        - Row 1 : Noms des mois aux colonnes 7,13,19,...,73 (1-indexed)
+        - Row 6 : En-têtes de colonnes (Grade, F.RC, Vaca, Prod, Cost, FTE) x 12 mois
+        - Row 7+ : Données consultants
+          - Col 1 (0-idx 0) : Project Num  (seulement sur la 1ère ligne du groupe)
+          - Col 2 (0-idx 1) : Project Name
+          - Col 3 (0-idx 2) : GGID
+          - Col 4 (0-idx 3) : Employee Name
+          - Chaque mois : 6 colonnes à partir de 0-idx 6, pas de 6
+            Grade(+0), F.RC(+1), Vaca(+2), Prod(+3), Cost(+4), FTE(+5)
+        """
         import openpyxl
         from datetime import datetime
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         try:
             ws = wb.active
             current_year = datetime.now().year
+            current_proj = None  # pour propager le project num aux lignes suivantes
             
-            # En-tetes reellement en ligne 6, donnees a partir de la ligne 7
             for row in ws.iter_rows(min_row=7, values_only=True):
-                proj_num = row[0]
-                ggid = row[2]
+                proj_num = row[0]   # Col A (0-idx 0)
+                ggid = row[2]       # Col C (0-idx 2)
                 
-                if proj_num is None or ggid is None:
+                # Mettre à jour le projet courant si la ligne en contient un
+                if proj_num is not None:
+                    current_proj = proj_num
+                
+                # Ignorer les lignes de total (GGID vide = ligne résumé projet)
+                if ggid is None:
                     continue
                     
-                norm_proj = ExpenditureItem._normalize_key(proj_num)
+                norm_proj = ExpenditureItem._normalize_key(current_proj)
                 norm_ggid = str(ggid).strip().replace("6427_", "")
                 
                 for m in range(12):
                     month_str = f"{m+1:02d}"
                     month_key = f"{current_year}-{month_str}"
                     
-                    base_idx = 4 + (m * 6)
+                    # Chaque bloc mois = 6 colonnes, démarrant à 0-idx 6
+                    # Mois 0 (Jan) : cols 6..11, Mois 1 (Feb) : cols 12..17, etc.
+                    base_idx = 6 + (m * 6)
+                    
                     if base_idx + 4 >= len(row):
                         break
-                        
+                    
+                    # Grade = base_idx + 0
+                    # F.RC  = base_idx + 1  → NCR forecast
+                    # Vaca  = base_idx + 2
+                    # Prod  = base_idx + 3  → Working Days forecast
+                    # Cost  = base_idx + 4  → Bill Amount forecast
+                    # FTE   = base_idx + 5
                     val_frc = row[base_idx + 1]
                     val_prod = row[base_idx + 3]
                     val_cost = row[base_idx + 4]
@@ -275,18 +301,26 @@ class ICBPipeline:
                 norm_proj = ExpenditureItem._normalize_key(cc_proj)
                 norm_emp = str(emp).strip().replace("6427_", "")
                 
+                sum_frc = 0.0
                 sum_prod = 0.0
                 sum_cost = 0.0
+                frc_count = 0
                 for m in active_months:
                     key = (norm_proj, norm_emp, m)
                     if key in self.forecast_data:
-                        sum_prod += self.forecast_data[key]["working_days"]
-                        sum_cost += self.forecast_data[key]["bill_amount"]
+                        fd = self.forecast_data[key]
+                        sum_frc += fd["ncr"]
+                        sum_prod += fd["working_days"]
+                        sum_cost += fd["bill_amount"]
+                        if fd["ncr"] != 0:
+                            frc_count += 1
                 
                 cons["forecast_working_days"] = sum_prod
                 cons["forecast_bill_amount"] = sum_cost
-                # Calcul du NCR Forecast agrege (Amount / Days * 8)
-                if sum_prod > 0:
+                # NCR Forecast = moyenne des F.RC non nulles, ou calcul dérivé
+                if frc_count > 0:
+                    cons["forecast_ncr"] = sum_frc / frc_count
+                elif sum_prod > 0:
                     cons["forecast_ncr"] = (sum_cost / sum_prod) * 8.0
                 else:
                     cons["forecast_ncr"] = 0.0
@@ -315,6 +349,9 @@ class ICBPipeline:
                     "total_bill_amount": round(cons["total_bill_amount"], 2),
                     "total_raw_cost": round(cons["total_raw_cost"], 2),
                     "has_anomaly": cons["has_anomaly"],
+                    "forecast_ncr": round(cons["forecast_ncr"], 2),
+                    "forecast_working_days": round(cons["forecast_working_days"], 2),
+                    "forecast_bill_amount": round(cons["forecast_bill_amount"], 2),
                 })
             result.append({
                 "cc_project_number": cc_proj,
