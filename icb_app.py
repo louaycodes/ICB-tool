@@ -77,24 +77,31 @@ class ExpenditureItem:
     """Une ligne de depense/facturation."""
 
     def __init__(self, row: dict):
-        self.item_id = row.get("Expenditure Item Id")
-        self.project_name = row.get("Project Name") or ""
-        self.cc_project_number = self._normalize_key(row.get("CC Project Number"))
-        self.task_number = row.get("Task Number")
-        self.employee_number = self._normalize_key(row.get("Employee Number"))
-        self.full_name = row.get("Full Name")
-        self.emp_grade = row.get("Emp Grade")
-        self.expenditure_type = row.get("Expenditure Type")
-        self.uom = row.get("UOM")
-        self.quantity = row.get("Quantity")
-        br = row.get("Bill Rate")
+        def _clean(val):
+            if pd.isna(val):
+                return None
+            if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+                return None
+            return val
+
+        self.item_id = _clean(row.get("Expenditure Item Id"))
+        self.project_name = _clean(row.get("Project Name")) or ""
+        self.cc_project_number = self._normalize_key(_clean(row.get("CC Project Number")))
+        self.task_number = _clean(row.get("Task Number"))
+        self.employee_number = self._normalize_key(_clean(row.get("Employee Number")))
+        self.full_name = _clean(row.get("Full Name"))
+        self.emp_grade = _clean(row.get("Emp Grade"))
+        self.expenditure_type = _clean(row.get("Expenditure Type"))
+        self.uom = _clean(row.get("UOM"))
+        self.quantity = _clean(row.get("Quantity"))
+        br = _clean(row.get("Bill Rate"))
         self.bill_rate = br * 8.0 if br is not None else None
-        self.raw_cost = row.get("Raw Cost")
-        self.bill_amount = row.get("Bill Amount")
-        self.invoice_type = row.get("Invoice Type")
-        self.date = excel_serial_to_date(row.get("Expenditure Item Date"))
+        self.raw_cost = _clean(row.get("Raw Cost"))
+        self.bill_amount = _clean(row.get("Bill Amount"))
+        self.invoice_type = _clean(row.get("Invoice Type"))
+        self.date = excel_serial_to_date(_clean(row.get("Expenditure Item Date")))
         # Colonne de correlation pour la detection d'anomalie
-        raw_corr = row.get("FULL NCR to Direct NCR Correlation")
+        raw_corr = _clean(row.get("FULL NCR to Direct NCR Correlation"))
         self.ncr_correlation = float(raw_corr) if raw_corr is not None else None
 
     @property
@@ -168,7 +175,11 @@ class ICBPipeline:
             try:
                 if val is None or str(val).strip() in ("", "-"):
                     return 0.0
-                return float(val)
+                f = float(val)
+                import math
+                if math.isnan(f) or math.isinf(f):
+                    return 0.0
+                return f
             except (ValueError, TypeError):
                 return 0.0
 
