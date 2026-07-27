@@ -26,6 +26,11 @@ UOM_FILTER = "HOURS"
 NCR_CORRELATION_TARGET = 0.75
 NCR_CORRELATION_TOLERANCE = 0.05  # valide si abs(correlation) dans [0.70, 0.80]
 
+# Seuils de tolerance pour la detection d'ecarts ICB vs FORECAST
+# (surlignage rouge des cellules + generation des commentaires export)
+GAP_TOLERANCE_AMOUNT = 2    # en unites monetaires (EUR/USD) — pour Bill Amount et NCR
+GAP_TOLERANCE_DAYS   = 0.5  # en jours — pour Working Days
+
 # --- Flask app ---
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 Mo max pour l'upload
@@ -830,7 +835,7 @@ class ICBPipeline:
                     icb_ba = cc['totals']['bill_amount']
                     gap_val = round(icb_ba - forecast_ba_total, 2) if has_any_forecast else 0
 
-                    if has_any_forecast and abs(gap_val) > 0.01:
+                    if has_any_forecast and abs(gap_val) > GAP_TOLERANCE_AMOUNT:
                         # Identifier les causes par consultant
                         # 1. Construire les sets ICB et Forecast (normalises)
                         icb_emps = {}  # norm_emp -> cons dict
@@ -882,12 +887,12 @@ class ICBPipeline:
                             # Comparaison WD
                             wd_icb = round(cons['working_days'], 2)
                             wd_fc = round(fd['working_days'], 2)
-                            if wd_icb and wd_fc and abs(wd_icb - wd_fc) > 0.01:
+                            if wd_icb and wd_fc and abs(wd_icb - wd_fc) > GAP_TOLERANCE_DAYS:
                                 details_wd.append(f"{label} ICB={wd_icb}j/Forecast={wd_fc}j")
                             # Comparaison NCR
                             ncr_icb = round(cons['ncr'], 2)
                             ncr_fc = round(fd['ncr'], 2)
-                            if ncr_icb and ncr_fc and abs(ncr_icb - ncr_fc) > 0.01:
+                            if ncr_icb and ncr_fc and abs(ncr_icb - ncr_fc) > GAP_TOLERANCE_AMOUNT:
                                 details_ncr.append(f"{label} ICB={ncr_icb}/Forecast={ncr_fc}")
 
                         # 4. Composer le commentaire

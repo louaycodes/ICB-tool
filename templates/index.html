@@ -284,13 +284,17 @@ async function applyGlobalDateFilter() {
 }
 
 // -- Gap detection: compare ICB vs FORECAST values --
-function hasGap(icb, forecast) {
-    // Only flag a gap when BOTH values are present (non-null, > 0)
+// Seuils centralises (doivent rester synchronises avec icb_app.py)
+const GAP_TOLERANCE_AMOUNT = 2;    // unites monetaires (EUR/USD) — pour Bill Amount et NCR
+const GAP_TOLERANCE_DAYS   = 0.5;  // jours — pour Working Days
+
+function hasGapAmount(icb, forecast) {
     if (!icb || !forecast) return false;
-    // Tolerance: round to 2 decimals, then check absolute diff
-    var a = Math.round(icb * 100) / 100;
-    var b = Math.round(forecast * 100) / 100;
-    return Math.abs(a - b) > 0.01;
+    return Math.abs(icb - forecast) > GAP_TOLERANCE_AMOUNT;
+}
+function hasGapDays(icb, forecast) {
+    if (!icb || !forecast) return false;
+    return Math.abs(icb - forecast) > GAP_TOLERANCE_DAYS;
 }
 
 // -- Render hierarchy table --
@@ -307,10 +311,10 @@ function renderHierarchy(ccProjects) {
 
     ccProjects.forEach(cc => {
         // Pre-compute gap flags for CC project totals
-        const ccGapWd = hasGap(cc.totals.working_days, cc.totals.forecast_working_days);
-        const ccGapBa = hasGap(cc.totals.bill_amount, cc.totals.forecast_bill_amount);
-        const ccGapNcr = hasGap(cc.totals.forecast_ncr, cc.totals.forecast_ncr) ? false :
-                         (cc.totals.forecast_working_days > 0 ? hasGap(null, cc.totals.forecast_ncr) : false);
+        const ccGapWd = hasGapDays(cc.totals.working_days, cc.totals.forecast_working_days);
+        const ccGapBa = hasGapAmount(cc.totals.bill_amount, cc.totals.forecast_bill_amount);
+        const ccGapNcr = hasGapAmount(cc.totals.forecast_ncr, cc.totals.forecast_ncr) ? false :
+                         (cc.totals.forecast_working_days > 0 ? hasGapAmount(null, cc.totals.forecast_ncr) : false);
         // NCR ICB is empty at CC level, so no NCR gap at CC level
 
         // -- CC Project row (top-level) --
@@ -335,9 +339,9 @@ function renderHierarchy(ccProjects) {
         // -- Consultant rows --
         cc.consultants.forEach((cons, idx) => {
             // Pre-compute gap flags per consultant
-            const gapNcr = hasGap(cons.ncr, cons.forecast_ncr);
-            const gapWd = hasGap(cons.working_days, cons.forecast_working_days);
-            const gapBa = hasGap(cons.total_bill_amount, cons.forecast_bill_amount);
+            const gapNcr = hasGapAmount(cons.ncr, cons.forecast_ncr);
+            const gapWd = hasGapDays(cons.working_days, cons.forecast_working_days);
+            const gapBa = hasGapAmount(cons.total_bill_amount, cons.forecast_bill_amount);
 
             const consRow = document.createElement("tr");
             let cls = "row-consultant";
@@ -361,6 +365,8 @@ function renderHierarchy(ccProjects) {
                 '<td class="num' + (gapBa ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
                 '<td class="num">' + fmt(cons.total_raw_cost) + '</td>';
             consRow.dataset.consName = cons.name;
+            // DIAG POINT 4 : tracer l'attachement du listener
+            console.log(`[DIAG-4] Attachement onclick: emp=${cons.employee_id}, cc=${cc.cc_project_number}, rowIndex=${tbody.children.length}`);
             consRow.onclick = (e) => { e.stopPropagation(); toggleDetail(consRow); };
             tbody.appendChild(consRow);
         });
@@ -404,19 +410,36 @@ async function fetchTransactions(empId, ccProj) {
     if (globalStart) url += `&start_date=${globalStart}`;
     if (globalEnd) url += `&end_date=${globalEnd}`;
     
+    // DIAG POINT 2 : URL de l'appel API
+    console.log(`[DIAG-2] fetchTransactions URL: ${url}`);
     const resp = await fetch(url);
-    return await resp.json();
+    const data = await resp.json();
+    console.log(`[DIAG-2] Reponse API: ${data.length} items recus (status=${resp.status})`);
+    if (data.length > 0) {
+        console.log(`[DIAG-2] Premier item:`, data[0]);
+    }
+    return data;
 }
 
 // -- Inline detail (toggle under the consultant row) --
 async function toggleDetail(rowEl) {
+  try {
     const empId = rowEl.dataset.emp;
     const ccProject = rowEl.dataset.cc;
     const name = rowEl.dataset.consName || "";
 
+    // DIAG POINT 1 : identifiants au moment du clic
+    console.log(`%c[DIAG-1] === CLIC CONSULTANT ===%c emp='${empId}', cc='${ccProject}', name='${name}'`,
+        'color: #00ff88; font-weight: bold', 'color: inherit');
+    console.log(`[DIAG-1] rowEl classes: '${rowEl.className}', display: '${rowEl.style.display}'`);
+    console.log(`[DIAG-1] rowEl est dans le DOM: ${document.body.contains(rowEl)}`);
+    console.log(`[DIAG-1] rowEl.parentNode: ${rowEl.parentNode ? rowEl.parentNode.id || rowEl.parentNode.tagName : 'NULL'}`);
+
     // if detail row already exists right after, remove it (toggle off)
     const nextRow = rowEl.nextElementSibling;
+    console.log(`[DIAG-1] nextSibling: ${nextRow ? nextRow.className : 'NULL'}`);
     if (nextRow && nextRow.classList.contains("row-detail-inline")) {
+        console.log(`[DIAG-1] -> Toggle OFF (detail deja ouverte, on la ferme)`);
         nextRow.remove();
         rowEl.classList.remove("selected");
         selectedConsRow = null;
@@ -426,12 +449,28 @@ async function toggleDetail(rowEl) {
     // close any other open detail
     closeAllInlineDetails();
 
+    // DIAG : verifier que le row est TOUJOURS dans le DOM apres closeAllInlineDetails
+    console.log(`[DIAG-3] Apres closeAllInlineDetails — rowEl encore dans DOM: ${document.body.contains(rowEl)}`);
+    if (!document.body.contains(rowEl)) {
+        console.error(`[DIAG-3] *** BUG : rowEl a ete RETIRE du DOM par closeAllInlineDetails ! ***`);
+        return;
+    }
+
     // highlight this row
     rowEl.classList.add("selected");
     selectedConsRow = rowEl;
 
     // fetch transactions
     const txns = await fetchTransactions(empId, ccProject);
+
+    // DIAG POINT 3 : verifier l'etat du DOM APRES l'await (le re-render a pu detruire le row)
+    console.log(`[DIAG-3] Apres await fetch — rowEl encore dans DOM: ${document.body.contains(rowEl)}`);
+    console.log(`[DIAG-3] rowEl.parentNode: ${rowEl.parentNode ? rowEl.parentNode.id || rowEl.parentNode.tagName : 'NULL'}`);
+    if (!document.body.contains(rowEl)) {
+        console.error(`[DIAG-3] *** BUG : rowEl a ete RETIRE du DOM pendant le fetch ! (re-render concurrent?) ***`);
+        console.error(`[DIAG-3] Les ${txns.length} items recus ne seront PAS injectes.`);
+        return;
+    }
 
     // build the inline detail row
     const detailRow = document.createElement("tr");
@@ -468,8 +507,33 @@ async function toggleDetail(rowEl) {
     td.innerHTML = html;
     detailRow.appendChild(td);
 
+    // DIAG POINT 3 (suite) : verification juste avant injection
+    console.log(`[DIAG-3] Juste avant insertion — parentNode: ${rowEl.parentNode ? rowEl.parentNode.id || rowEl.parentNode.tagName : 'NULL'}`);
+    console.log(`[DIAG-3] detailRow HTML length: ${td.innerHTML.length}, txns.length: ${txns.length}`);
+    console.log(`[DIAG-3] rowEl.nextSibling avant insert: ${rowEl.nextSibling ? rowEl.nextSibling.className || rowEl.nextSibling.tagName : 'NULL'}`);
+
     // insert right after the consultant row
     rowEl.parentNode.insertBefore(detailRow, rowEl.nextSibling);
+
+    // DIAG : confirmer l'insertion
+    console.log(`[DIAG-3] Apres insertion — detailRow dans DOM: ${document.body.contains(detailRow)}`);
+    console.log(`[DIAG-3] detailRow.style.display: '${detailRow.style.display}'`);
+    console.log(`[DIAG-3] detailRow visible (offsetHeight): ${detailRow.offsetHeight}`);
+    if (detailRow.offsetHeight === 0) {
+        console.warn(`[DIAG-3] *** La detailRow a une hauteur de 0 — elle est INVISIBLE ! ***`);
+        console.warn(`[DIAG-3] Parent display: '${rowEl.parentNode.style.display}'`);
+        // Verifier si le CC parent est collapsed
+        const ccRow = document.querySelector(`.row-cc[data-cc="${ccProject}"]`);
+        if (ccRow) {
+            console.warn(`[DIAG-3] CC row collapsed: ${ccRow.classList.contains('collapsed')}`);
+        }
+    }
+
+  } catch (err) {
+    // DIAG POINT 5 : capturer toute erreur silencieuse
+    console.error(`[DIAG-5] *** ERREUR dans toggleDetail ***`, err);
+    console.error(`[DIAG-5] Stack:`, err.stack);
+  }
 }
 
 function closeAllInlineDetails() {
