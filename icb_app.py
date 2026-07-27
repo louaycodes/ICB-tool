@@ -1054,6 +1054,15 @@ def get_transactions():
         i for i in items
         if i.employee_number == emp and i.cc_project_number == cc_proj
     ]
+    
+    print("\n" + "=" * 80)
+    print(f"[DIAG-BACKEND] QUERY: employee='{emp}', cc_project='{cc_proj}', month='{month}', start='{start_date}', end='{end_date}'")
+    print(f"[DIAG-BACKEND] MATCHES: {len(txns)} items trouves")
+    if len(txns) > 0:
+        print("[DIAG-BACKEND] TOP 3 ITEMS:")
+        for idx, t in enumerate(txns[:3]):
+            print(f"  {idx+1}. Emp={t.employee_number} | CC={t.cc_project_number} | Date={t.date} | Cost={t.raw_cost} | Desc={t.expenditure_type}")
+    
     result = []
     for t in txns:
         result.append({
@@ -1068,6 +1077,12 @@ def get_transactions():
             "ncr_correlation": round(t.ncr_correlation, 4) if t.ncr_correlation is not None else None,
             "has_anomaly": t.has_anomaly,
         })
+    
+    import json
+    json_str = json.dumps(result)
+    print(f"[DIAG-BACKEND] JSON SIZE: {len(json_str)} caracteres")
+    print("=" * 80 + "\n")
+    
     return jsonify(result)
 
 

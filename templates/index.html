@@ -408,12 +408,27 @@ async function fetchTransactions(empId, ccProj) {
     if (globalStart) url += `&start_date=${globalStart}`;
     if (globalEnd) url += `&end_date=${globalEnd}`;
     
+    console.log(`[DIAG-FRONTEND] FETCHING: ${url}`);
+    
     const resp = await fetch(url);
-    return await resp.json();
+    const textResp = await resp.text();
+    console.log(`[DIAG-FRONTEND] HTTP REPONSE BRUTE (taille: ${textResp.length}):\n`, textResp.substring(0, 300) + (textResp.length > 300 ? "..." : ""));
+    
+    const data = JSON.parse(textResp);
+    console.log(`[DIAG-FRONTEND] JSON PARSE: array of length ${data.length}`);
+    if (data.length > 0) {
+        console.log(`[DIAG-FRONTEND] PREMIER ITEM PARSE:`, data[0]);
+    }
+    
+    return data;
 }
 
 // -- Inline detail (toggle under the consultant row) --
 async function toggleDetail(rowEl) {
+    // Count clicks for this row to detect double-binding
+    rowEl.dataset.clickCount = (parseInt(rowEl.dataset.clickCount || "0")) + 1;
+    console.log(`[DIAG-FRONTEND] TOGGLE APPELE SUR emp=${rowEl.dataset.emp}, CLICK COUNT = ${rowEl.dataset.clickCount}`);
+    
     const empId = rowEl.dataset.emp;
     const ccProject = rowEl.dataset.cc;
     const name = rowEl.dataset.consName || "";
@@ -421,6 +436,7 @@ async function toggleDetail(rowEl) {
     // if detail row already exists right after, remove it (toggle off)
     const nextRow = rowEl.nextElementSibling;
     if (nextRow && nextRow.classList.contains("row-detail-inline")) {
+        console.log(`[DIAG-FRONTEND] CLOSING EXISITNG INLINE DETAIL FOR ${empId}`);
         nextRow.remove();
         rowEl.classList.remove("selected");
         selectedConsRow = null;
@@ -472,8 +488,20 @@ async function toggleDetail(rowEl) {
     td.innerHTML = html;
     detailRow.appendChild(td);
 
-    // insert right after the consultant row
-    rowEl.parentNode.insertBefore(detailRow, rowEl.nextSibling);
+    console.log(`[DIAG-FRONTEND] AVANT INSERTION: rowEl.parentNode existe ? = ${!!rowEl.parentNode}`);
+    console.log(`[DIAG-FRONTEND] AVANT INSERTION: document.body.contains(rowEl) ? = ${document.body.contains(rowEl)}`);
+    console.log(`[DIAG-FRONTEND] AVANT INSERTION: rowEl outerHTML =`, rowEl.outerHTML);
+
+    try {
+        // insert right after the consultant row
+        rowEl.parentNode.insertBefore(detailRow, rowEl.nextSibling);
+        
+        console.log(`[DIAG-FRONTEND] APRES INSERTION: document.body.contains(detailRow) ? = ${document.body.contains(detailRow)}`);
+        const computedStyle = window.getComputedStyle(detailRow);
+        console.log(`[DIAG-FRONTEND] CSS APRES INSERTION: display=${computedStyle.display}, height=${computedStyle.height}, visibility=${computedStyle.visibility}`);
+    } catch (e) {
+        console.error(`[DIAG-FRONTEND] ERREUR LORS DE L'INSERTION:`, e);
+    }
 }
 
 function closeAllInlineDetails() {
