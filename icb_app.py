@@ -802,6 +802,7 @@ class ICBPipeline:
         cc_fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
         cc_font = Font(bold=True)
         right_align = Alignment(horizontal="right")
+        wrap_align = Alignment(wrap_text=True)
 
         if not months_in_range:
             default_ws.title = "Aucune donnee"
@@ -874,6 +875,7 @@ class ICBPipeline:
                         # 2. Pour chaque consultant ICB, chercher dans le forecast et detecter ecarts
                         details_wd = []
                         details_ncr = []
+                        details_ba = []  # [(abs_gap, label, ba_icb, ba_fc), ...]
                         
                         for ne in sorted(icb_emps.keys()):
                             cons = icb_emps[ne]
@@ -896,6 +898,12 @@ class ICBPipeline:
                             if ncr_icb and ncr_fc and abs(ncr_icb - ncr_fc) > GAP_TOLERANCE_AMOUNT:
                                 details_ncr.append(f"{label} ICB={ncr_icb}/Forecast={ncr_fc}")
 
+                            # Comparaison Bill Amount
+                            ba_icb = round(cons['total_bill_amount'], 2)
+                            ba_fc = round(fd['bill_amount'], 2)
+                            if abs(ba_icb - ba_fc) > GAP_TOLERANCE_AMOUNT:
+                                details_ba.append((abs(ba_icb - ba_fc), label, ba_icb, ba_fc))
+
                         # 3. Composer le commentaire final
                         parts = []
 
@@ -905,9 +913,14 @@ class ICBPipeline:
                             parts.append(f"Ecart lie au taux (NCR) : {_limit_list(details_ncr)}")
 
                         if not parts:
-                            parts.append("Probleme avec Bill Amount (a verifier manuellement)")
+                            if details_ba:
+                                details_ba.sort(key=lambda x: x[0], reverse=True)
+                                entries = [f"{x[1]} ICB={x[2]}/Forecast={x[3]}" for x in details_ba]
+                                parts.append(f"Probleme avec Bill Amount : {_limit_list(entries)}")
+                            else:
+                                parts.append("Probleme avec Bill Amount (a verifier manuellement)")
 
-                        comment = " ; ".join(parts)
+                        comment = "\n".join(parts)
 
                     ws.append([
                         cc['project_name'] or "",
@@ -925,6 +938,8 @@ class ICBPipeline:
                         cell.font = cc_font
                         if col >= 3 and col <= 7:
                             cell.alignment = right_align
+                        elif col == 8:
+                            cell.alignment = wrap_align
                     current_row += 1
 
                 # Adjust columns width
