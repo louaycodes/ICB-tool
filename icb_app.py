@@ -1043,12 +1043,104 @@ def get_transactions():
     
     if not emp or not cc_proj:
         return jsonify({"error": "Parametres employee et cc_project requis."}), 400
-        
+
+    # =====================================================================
+    # DIAGNOSTIC TEMPORAIRE — a retirer apres resolution du bug
+    # =====================================================================
+    print("\n" + "=" * 70)
+    print("[DIAG TRANSACTIONS] Clic sur ligne consultant")
+    print("=" * 70)
+
+    # 1. Employee Number BRUT (tel que recu par l'appel API)
+    print(f"  1. Employee Number BRUT recu par l'API : '{emp}' (type={type(emp).__name__})")
+    print(f"     CC Project Number BRUT recu par l'API : '{cc_proj}' (type={type(cc_proj).__name__})")
+
+    # 2. Employee Number NORMALISE (applique _normalize_key pour comparaison)
+    norm_emp = ExpenditureItem._normalize_key(emp)
+    norm_cc = ExpenditureItem._normalize_key(cc_proj)
+    print(f"  2. Employee Number NORMALISE : '{norm_emp}'")
+    print(f"     CC Project Number NORMALISE : '{norm_cc}'")
+
+    # 3. Nombre d'expenditure items AVANT filtres de dates
+    #    On cherche dans TOUS les items filtres (sans filtre de mois/date)
+    all_items_no_filter = pipeline.filtered_items
+    items_before_filter = [
+        i for i in all_items_no_filter
+        if i.employee_number == emp and i.cc_project_number == cc_proj
+    ]
+    # Aussi tester avec comparaison normalisee
+    items_before_filter_normalized = [
+        i for i in all_items_no_filter
+        if ExpenditureItem._normalize_key(i.employee_number) == norm_emp
+        and i.cc_project_number == norm_cc
+    ]
+    print(f"  3. Items AVANT filtres de dates (comparaison directe) : {len(items_before_filter)}")
+    print(f"     Items AVANT filtres de dates (comparaison normalisee) : {len(items_before_filter_normalized)}")
+    if len(items_before_filter) != len(items_before_filter_normalized):
+        print(f"     *** DIVERGENCE DETECTEE ! La comparaison directe et normalisee donnent des resultats differents ***")
+        print(f"     Cela indique un probleme de type ou de format entre la valeur API et les donnees source.")
+
+    # 4. Filtres de dates actuellement actifs
+    print(f"  4. Filtres actifs : month='{month}', start_date='{start_date}', end_date='{end_date}'")
+
+    # 5. Items APRES application des filtres
     items = pipeline._get_items(month_filter=month, start_date=start_date, end_date=end_date)
     txns = [
         i for i in items
         if i.employee_number == emp and i.cc_project_number == cc_proj
     ]
+    txns_normalized = [
+        i for i in items
+        if ExpenditureItem._normalize_key(i.employee_number) == norm_emp
+        and i.cc_project_number == norm_cc
+    ]
+    print(f"  5. Items APRES filtres (comparaison directe) : {len(txns)}")
+    print(f"     Items APRES filtres (comparaison normalisee) : {len(txns_normalized)}")
+
+    # 6. Si 0 items trouves en comparaison directe : inspecter les donnees source
+    if len(items_before_filter) == 0:
+        print(f"  6. *** 0 ITEMS TROUVES — Inspection des donnees source ***")
+        # Lister les employee_numbers presents pour ce cc_project
+        emps_for_proj = set()
+        emps_for_proj_raw = {}  # norm -> (raw_value, raw_type)
+        for i in all_items_no_filter:
+            if i.cc_project_number == cc_proj or i.cc_project_number == norm_cc:
+                raw_e = i.employee_number
+                norm_e = ExpenditureItem._normalize_key(raw_e)
+                emps_for_proj.add(norm_e)
+                emps_for_proj_raw[norm_e] = (raw_e, type(raw_e).__name__)
+        
+        print(f"     CC Project '{cc_proj}' : {len(emps_for_proj)} employee(s) distincts dans les donnees source")
+        
+        # Chercher si l'employee existe sous un format different
+        if norm_emp in emps_for_proj:
+            raw_val, raw_type = emps_for_proj_raw[norm_emp]
+            print(f"     -> Employee TROUVE sous format different !")
+            print(f"        Valeur dans les donnees : '{raw_val}' (type={raw_type})")
+            print(f"        Valeur recue par l'API  : '{emp}' (type=str)")
+            print(f"        => Le bug est un PROBLEME DE TYPE (la comparaison directe echoue)")
+        else:
+            print(f"     -> Employee '{norm_emp}' est ABSENT de ce projet dans les donnees source")
+            # Montrer les employees presents pour aider au debug
+            sample = list(emps_for_proj)[:10]
+            print(f"     -> Employees presents (max 10) : {sample}")
+            # Aussi verifier si l'employee existe dans un AUTRE projet
+            other_projects = set()
+            for i in all_items_no_filter:
+                if ExpenditureItem._normalize_key(i.employee_number) == norm_emp:
+                    other_projects.add(i.cc_project_number)
+            if other_projects:
+                print(f"     -> Cet employee existe dans d'autres projets : {other_projects}")
+            else:
+                print(f"     -> Cet employee n'existe dans AUCUN projet des donnees source")
+    else:
+        print(f"  6. (Pas d'inspection necessaire — {len(items_before_filter)} items trouves)")
+
+    print("=" * 70 + "\n")
+    # =====================================================================
+    # FIN DIAGNOSTIC TEMPORAIRE
+    # =====================================================================
+
     result = []
     for t in txns:
         result.append({
