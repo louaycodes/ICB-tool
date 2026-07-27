@@ -847,30 +847,17 @@ class ICBPipeline:
                     gap_val = round(icb_ba - forecast_ba_total, 2) if has_any_forecast else 0
 
                     if has_any_forecast and abs(gap_val) > GAP_TOLERANCE_AMOUNT:
-                        # Identifier les causes par consultant
-                        # 1. Construire les sets ICB et Forecast (normalises)
+                        # Identifier les causes par consultant, en partant de l'ICB
+                        # 1. Construire le set ICB (normalise)
                         icb_emps = {}  # norm_emp -> cons dict
                         for cons in cc['consultants']:
                             ne = str(cons['employee_id']).strip().replace("6427_", "")
                             icb_emps[ne] = cons
 
-                        forecast_emps = set()
-                        for fk in self.forecast_data:
-                            if fk[0] == norm_proj and fk[2] == month:
-                                forecast_emps.add(fk[1])
-
-                        icb_set = set(icb_emps.keys())
-
-                        # 2. Consultants absents
-                        only_icb = icb_set - forecast_emps      # dans ICB, pas dans Forecast
-                        only_forecast = forecast_emps - icb_set  # dans Forecast, pas dans ICB
-
                         # Helper : formater un identifiant consultant avec son nom
-                        def _id_name(ne, source='icb'):
+                        def _id_name(ne):
                             """Retourne 'ID (Nom)' ou juste 'ID' si nom inconnu."""
-                            name = None
-                            if source == 'icb' and ne in icb_emps:
-                                name = icb_emps[ne].get('name')
+                            name = icb_emps[ne].get('name')
                             if not name:
                                 name = self.forecast_names.get((norm_proj, ne))
                             if name:
@@ -884,29 +871,32 @@ class ICBPipeline:
                             shown = ", ".join(entries[:max_show])
                             return f"{shown} ... et {len(entries) - max_show} autre(s)"
 
-                        # 3. Pour les consultants communs, detecter ecarts NCR / WD
-                        common = icb_set & forecast_emps
-                        details_wd = []   # [(id_name_str, wd_icb, wd_fc), ...]
-                        details_ncr = []  # [(id_name_str, ncr_icb, ncr_fc), ...]
-                        for ne in sorted(common):
+                        # 2. Pour chaque consultant ICB, chercher dans le forecast et detecter ecarts
+                        details_wd = []
+                        details_ncr = []
+                        
+                        for ne in sorted(icb_emps.keys()):
                             cons = icb_emps[ne]
                             fk = (norm_proj, ne, month)
                             fd = self.forecast_data.get(fk)
                             if not fd:
+                                # Absent du forecast -> c'est normal, on l'ignore
                                 continue
-                            label = _id_name(ne, 'icb')
+                                
+                            label = _id_name(ne)
                             # Comparaison WD
                             wd_icb = round(cons['working_days'], 2)
                             wd_fc = round(fd['working_days'], 2)
                             if wd_icb and wd_fc and abs(wd_icb - wd_fc) > GAP_TOLERANCE_DAYS:
                                 details_wd.append(f"{label} ICB={wd_icb}j/Forecast={wd_fc}j")
+                            
                             # Comparaison NCR
                             ncr_icb = round(cons['ncr'], 2)
                             ncr_fc = round(fd['ncr'], 2)
                             if ncr_icb and ncr_fc and abs(ncr_icb - ncr_fc) > GAP_TOLERANCE_AMOUNT:
                                 details_ncr.append(f"{label} ICB={ncr_icb}/Forecast={ncr_fc}")
 
-                        # 4. Composer le commentaire
+                        # 3. Composer le commentaire final
                         parts = []
 
                         if details_wd:
@@ -914,16 +904,8 @@ class ICBPipeline:
                         if details_ncr:
                             parts.append(f"Ecart lie au taux (NCR) : {_limit_list(details_ncr)}")
 
-                        if only_forecast:
-                            entries = [_id_name(ne, 'forecast') for ne in sorted(only_forecast)]
-                            parts.append(f"Consultant(s) absent(s) de l'ICB : {_limit_list(entries)}")
-
-                        if only_icb:
-                            entries = [_id_name(ne, 'icb') for ne in sorted(only_icb)]
-                            parts.append(f"Consultant(s) absent(s) du Forecast : {_limit_list(entries)}")
-
                         if not parts:
-                            parts.append("Ecart non explique par jours travailles ou taux — a verifier manuellement")
+                            parts.append("Probleme avec Bill Amount (a verifier manuellement)")
 
                         comment = " ; ".join(parts)
 
