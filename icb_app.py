@@ -26,10 +26,7 @@ UOM_FILTER = "HOURS"
 NCR_CORRELATION_TARGET = 0.75
 NCR_CORRELATION_TOLERANCE = 0.05  # valide si abs(correlation) dans [0.70, 0.80]
 
-# Seuils de tolerance pour la detection d'ecarts ICB vs FORECAST
-# (surlignage rouge des cellules + generation des commentaires export)
-GAP_TOLERANCE_AMOUNT = 2    # en unites monetaires (EUR/USD) — pour Bill Amount et NCR
-GAP_TOLERANCE_DAYS   = 0.5  # en jours — pour Working Days
+# Les seuils de tolerance sont desormais envoyes dynamiquement depuis le frontend.
 
 # --- Flask app ---
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -647,7 +644,7 @@ class ICBPipeline:
                     "consultants": OrderedDict(),
                     "totals": {
                         "working_days": 0.0, "raw_cost": 0.0, "bill_amount": 0.0,
-                        "forecast_working_days": 0.0, "forecast_bill_amount": 0.0, "forecast_ncr": 0.0
+                        "forecast_working_days": 0.0, "forecast_bill_amount": 0.0, "forecast_ncr": 0.0, "ncr": 0.0
                     },
                 }
 
@@ -728,10 +725,13 @@ class ICBPipeline:
                 cc_data["totals"]["forecast_working_days"] += cons["forecast_working_days"]
                 cc_data["totals"]["forecast_bill_amount"] += cons["forecast_bill_amount"]
             
-            # Calcul du NCR global pour le projet (informatif)
-            if cc_data["totals"]["forecast_working_days"] > 0:
-                cc_data["totals"]["forecast_ncr"] = (cc_data["totals"]["forecast_bill_amount"] / cc_data["totals"]["forecast_working_days"]) * 8.0
+            # Calcul du NCR global pour le projet (informatif, moyenne simple)
+            num_cons = len(cc_data["consultants"])
+            if num_cons > 0:
+                cc_data["totals"]["ncr"] = sum(c["ncr"] for c in cc_data["consultants"].values()) / num_cons
+                cc_data["totals"]["forecast_ncr"] = sum(c["forecast_ncr"] for c in cc_data["consultants"].values()) / num_cons
             else:
+                cc_data["totals"]["ncr"] = 0.0
                 cc_data["totals"]["forecast_ncr"] = 0.0
 
         # tri et serialisation
@@ -783,10 +783,12 @@ class ICBPipeline:
             })
         return result
 
-    def export_to_excel(self, month_filter, start_date, end_date):
+    def export_to_excel(self, month_filter, start_date, end_date, gap_tolerance=2.0):
         import io
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.worksheet.table import Table, TableStyleInfo
+        from openpyxl.utils import get_column_letter
 
         # 1. Obtenir les items dans l'intervalle pour determiner les mois concernes
         items_in_range = self._get_items(month_filter=month_filter, start_date=start_date, end_date=end_date)
@@ -797,10 +799,6 @@ class ICBPipeline:
         default_ws = wb.active
 
         # Styles
-        header_fill = PatternFill(start_color="1A3A5C", end_color="1A3A5C", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True)
-        cc_fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
-        cc_font = Font(bold=True)
         right_align = Alignment(horizontal="right")
         wrap_align = Alignment(wrap_text=True)
 
@@ -817,22 +815,26 @@ class ICBPipeline:
 
                 data = self.hierarchy_data(month_filter=month, start_date=start_date, end_date=end_date)
 
-                # Headers : Project Name, CC Project Number, Working Days, Bill Amount, Forecast, Gap, Raw Cost, Comment
-                headers = ["Project Name", "CC Project Number", "Working Days", "Bill Amount", "Forecast bill amount", "Gap", "Raw Cost", "Comment"]
+                # Nouvel ordre des headers
+                headers = [
+                    "EM_Lead", 
+                    "Project Name", 
+                    "CC Project Number", 
+                    "Working Days", 
+                    "Bill Amount", 
+                    "Forecast bill amount", 
+                    "Gap", 
+                    "Raw Cost", 
+                    "Issue Type", 
+                    "Generated comment"
+                ]
                 ws.append(headers)
-                for col in range(1, 9):
-                    cell = ws.cell(row=1, column=col)
-                    cell.fill = header_fill
-                    cell.font = header_font
-                    if col >= 3 and col <= 7:
-                        cell.alignment = right_align
 
                 current_row = 2
                 for cc in data:
                     norm_proj = ExpenditureItem._normalize_key(cc['cc_project_number'])
 
-                    # --- Col 5 : Forecast Bill Amount ---
-                    # Distinguer "aucune donnee forecast" (vide) de "forecast = 0" (ecrire 0)
+                    # --- Col 6 : Forecast Bill Amount ---
                     has_any_forecast = False
                     forecast_ba_total = 0.0
                     for fk, fd in self.forecast_data.items():
@@ -842,22 +844,18 @@ class ICBPipeline:
 
                     forecast_cell_value = round(forecast_ba_total, 2) if has_any_forecast else ""
 
-                    # --- Col 8 : Comment auto-genere ---
+                    # --- Col 10 : Generated comment ---
                     comment = ""
                     icb_ba = cc['totals']['bill_amount']
                     gap_val = round(icb_ba - forecast_ba_total, 2) if has_any_forecast else 0
 
-                    if has_any_forecast and abs(gap_val) > GAP_TOLERANCE_AMOUNT:
-                        # Identifier les causes par consultant, en partant de l'ICB
-                        # 1. Construire le set ICB (normalise)
-                        icb_emps = {}  # norm_emp -> cons dict
+                    if has_any_forecast and abs(gap_val) > gap_tolerance:
+                        icb_emps = {}
                         for cons in cc['consultants']:
                             ne = str(cons['employee_id']).strip().replace("6427_", "")
                             icb_emps[ne] = cons
 
-                        # Helper : formater un identifiant consultant avec son nom
                         def _id_name(ne):
-                            """Retourne 'ID (Nom)' ou juste 'ID' si nom inconnu."""
                             name = icb_emps[ne].get('name')
                             if not name:
                                 name = self.forecast_names.get((norm_proj, ne))
@@ -865,46 +863,43 @@ class ICBPipeline:
                                 return f"{ne} ({name})"
                             return ne
 
-                        # Helper : limiter la liste a 5 elements max
                         def _limit_list(entries, max_show=5):
                             if len(entries) <= max_show:
                                 return ", ".join(entries)
                             shown = ", ".join(entries[:max_show])
                             return f"{shown} ... et {len(entries) - max_show} autre(s)"
 
-                        # 2. Pour chaque consultant ICB, chercher dans le forecast et detecter ecarts
                         details_wd = []
                         details_ncr = []
-                        details_ba = []  # [(abs_gap, label, ba_icb, ba_fc), ...]
+                        details_ba = []
                         
                         for ne in sorted(icb_emps.keys()):
                             cons = icb_emps[ne]
                             fk = (norm_proj, ne, month)
                             fd = self.forecast_data.get(fk)
                             if not fd:
-                                # Absent du forecast -> c'est normal, on l'ignore
                                 continue
                                 
                             label = _id_name(ne)
-                            # Comparaison WD
+                            
+                            # Comparaison WD : egalite stricte
                             wd_icb = round(cons['working_days'], 2)
                             wd_fc = round(fd['working_days'], 2)
-                            if wd_icb and wd_fc and abs(wd_icb - wd_fc) > GAP_TOLERANCE_DAYS:
+                            if wd_icb and wd_fc and wd_icb != wd_fc:
                                 details_wd.append(f"{label} ICB={wd_icb}j/Forecast={wd_fc}j")
                             
-                            # Comparaison NCR
+                            # Comparaison NCR : utilise la tolerance dynamique
                             ncr_icb = round(cons['ncr'], 2)
                             ncr_fc = round(fd['ncr'], 2)
-                            if ncr_icb and ncr_fc and abs(ncr_icb - ncr_fc) > GAP_TOLERANCE_AMOUNT:
+                            if ncr_icb and ncr_fc and abs(ncr_icb - ncr_fc) > gap_tolerance:
                                 details_ncr.append(f"{label} ICB={ncr_icb}/Forecast={ncr_fc}")
 
                             # Comparaison Bill Amount
                             ba_icb = round(cons['total_bill_amount'], 2)
                             ba_fc = round(fd['bill_amount'], 2)
-                            if abs(ba_icb - ba_fc) > GAP_TOLERANCE_AMOUNT:
+                            if abs(ba_icb - ba_fc) > gap_tolerance:
                                 details_ba.append((abs(ba_icb - ba_fc), label, ba_icb, ba_fc))
 
-                        # 3. Composer le commentaire final
                         parts = []
 
                         if details_wd:
@@ -923,34 +918,48 @@ class ICBPipeline:
                         comment = "\n".join(parts)
 
                     ws.append([
-                        cc['project_name'] or "",
-                        cc['cc_project_number'],
-                        cc['totals']['working_days'],
-                        cc['totals']['bill_amount'],
-                        forecast_cell_value,       # Forecast bill amount
-                        f"=D{current_row}-E{current_row}", # Gap (formule Excel)
-                        cc['totals']['raw_cost'],
-                        comment                    # Comment auto-genere
+                        "", # 1. EM_Lead
+                        cc['project_name'] or "", # 2. Project Name
+                        cc['cc_project_number'], # 3. CC Project Number
+                        cc['totals']['working_days'], # 4. Working Days
+                        cc['totals']['bill_amount'], # 5. Bill Amount
+                        forecast_cell_value, # 6. Forecast bill amount
+                        f"=E{current_row}-F{current_row}", # 7. Gap
+                        cc['totals']['raw_cost'], # 8. Raw Cost
+                        "", # 9. Issue Type
+                        comment # 10. Generated comment
                     ])
-                    for col in range(1, 9):
+                    
+                    # Alignement
+                    for col in range(1, 11):
                         cell = ws.cell(row=current_row, column=col)
-                        cell.fill = cc_fill
-                        cell.font = cc_font
-                        if col >= 3 and col <= 7:
+                        if col in [4, 5, 6, 7, 8]:
                             cell.alignment = right_align
-                        elif col == 8:
+                        elif col == 10:
                             cell.alignment = wrap_align
+                            
                     current_row += 1
 
-                # Adjust columns width
-                ws.column_dimensions['A'].width = 40
-                ws.column_dimensions['B'].width = 25
-                ws.column_dimensions['C'].width = 15
-                ws.column_dimensions['D'].width = 15
-                ws.column_dimensions['E'].width = 20
-                ws.column_dimensions['F'].width = 15
-                ws.column_dimensions['G'].width = 15
-                ws.column_dimensions['H'].width = 60
+                # Definir le tableau Excel
+                if current_row > 2:
+                    table_ref = f"A1:{get_column_letter(10)}{current_row - 1}"
+                    tab = Table(displayName=f"Table_{month.replace('-', '_')}", ref=table_ref)
+                    style = TableStyleInfo(name="TableStyleMedium9", showFirstColumn=False,
+                                           showLastColumn=False, showRowStripes=True, showColumnStripes=False)
+                    tab.tableStyleInfo = style
+                    ws.add_table(tab)
+
+                # Ajustement de la largeur des colonnes
+                ws.column_dimensions['A'].width = 25 # EM_Lead
+                ws.column_dimensions['B'].width = 40 # Project Name
+                ws.column_dimensions['C'].width = 25 # CC Project Number
+                ws.column_dimensions['D'].width = 15 # Working Days
+                ws.column_dimensions['E'].width = 15 # Bill Amount
+                ws.column_dimensions['F'].width = 20 # Forecast bill amount
+                ws.column_dimensions['G'].width = 15 # Gap
+                ws.column_dimensions['H'].width = 15 # Raw Cost
+                ws.column_dimensions['I'].width = 25 # Issue Type
+                ws.column_dimensions['J'].width = 60 # Generated comment
 
         buffer = io.BytesIO()
         wb.save(buffer)
@@ -1107,8 +1116,14 @@ def export_excel():
     start_date = request.args.get("start_date", None)
     end_date = request.args.get("end_date", None)
     
+    gap_tolerance_str = request.args.get("gap_tolerance", "2")
     try:
-        buffer = pipeline.export_to_excel(month_filter=month, start_date=start_date, end_date=end_date)
+        gap_tolerance = float(gap_tolerance_str)
+    except ValueError:
+        gap_tolerance = 2.0
+    
+    try:
+        buffer = pipeline.export_to_excel(month_filter=month, start_date=start_date, end_date=end_date, gap_tolerance=gap_tolerance)
         
         import os
         if start_date and end_date:

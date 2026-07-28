@@ -57,6 +57,10 @@
         <div class="global-filters" id="global-filters" style="display:none;">
             <label>Du : <input type="date" id="global-start" onchange="applyGlobalDateFilter()"></label>
             <label>Au : <input type="date" id="global-end" onchange="applyGlobalDateFilter()"></label>
+            <label style="margin-left: 20px;">
+                Tolerance Ecart (Montant/NCR) : 
+                <input type="number" step="0.1" id="gap-tolerance-input" value="2" style="width: 60px;" onchange="updateGapTolerance()">
+            </label>
         </div>
 
         <!-- Month bar (always visible above the table) -->
@@ -259,6 +263,7 @@ async function loadHierarchy() {
     if (globalEnd) url += `end_date=${globalEnd}&`;
     const resp = await fetch(url);
     const data = await resp.json();
+    window.currentHierarchyData = data;
     renderHierarchy(data);
 }
 
@@ -284,17 +289,24 @@ async function applyGlobalDateFilter() {
 }
 
 // -- Gap detection: compare ICB vs FORECAST values --
-// Seuils centralises (doivent rester synchronises avec icb_app.py)
-const GAP_TOLERANCE_AMOUNT = 2;    // unites monetaires (EUR/USD) — pour Bill Amount et NCR
-const GAP_TOLERANCE_DAYS   = 0.5;  // jours — pour Working Days
+function getGapTolerance() {
+    const val = document.getElementById("gap-tolerance-input").value;
+    return parseFloat(val) || 0;
+}
+
+function updateGapTolerance() {
+    if (window.currentHierarchyData) {
+        renderHierarchy(window.currentHierarchyData);
+    }
+}
 
 function hasGapAmount(icb, forecast) {
-    if (!icb || !forecast) return false;
-    return Math.abs(icb - forecast) > GAP_TOLERANCE_AMOUNT;
+    if (icb == null || forecast == null || icb === "" || forecast === "") return false;
+    return Math.abs(icb - forecast) > getGapTolerance();
 }
 function hasGapDays(icb, forecast) {
-    if (!icb || !forecast) return false;
-    return Math.abs(icb - forecast) > GAP_TOLERANCE_DAYS;
+    if (icb == null || forecast == null || icb === "" || forecast === "") return false;
+    return icb !== forecast;
 }
 
 // -- Render hierarchy table --
@@ -313,9 +325,7 @@ function renderHierarchy(ccProjects) {
         // Pre-compute gap flags for CC project totals
         const ccGapWd = hasGapDays(cc.totals.working_days, cc.totals.forecast_working_days);
         const ccGapBa = hasGapAmount(cc.totals.bill_amount, cc.totals.forecast_bill_amount);
-        const ccGapNcr = hasGapAmount(cc.totals.forecast_ncr, cc.totals.forecast_ncr) ? false :
-                         (cc.totals.forecast_working_days > 0 ? hasGapAmount(null, cc.totals.forecast_ncr) : false);
-        // NCR ICB is empty at CC level, so no NCR gap at CC level
+        const ccGapNcr = hasGapAmount(cc.totals.ncr, cc.totals.forecast_ncr);
 
         // -- CC Project row (top-level) --
         const ccRow = document.createElement("tr");
@@ -326,8 +336,8 @@ function renderHierarchy(ccProjects) {
             : esc(cc.cc_project_number);
         ccRow.innerHTML =
             '<td colspan="4"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
-            '<td></td>' + // NCR ICB (empty at CC level)
-            '<td class="num" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
+            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
             '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
             '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
             '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
@@ -377,8 +387,8 @@ function renderHierarchy(ccProjects) {
         totRow.innerHTML =
             '<td class="label-indent-1"></td>' +
             '<td colspan="3">TOTAL ' + esc(cc.cc_project_number) + '</td>' +
-            '<td></td>' + // NCR ICB
-            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
+            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
             '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
             '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
             '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
@@ -589,6 +599,9 @@ function submitExport() {
     if (currentMonth) url += `month=${currentMonth}&`;
     if (globalStart) url += `start_date=${globalStart}&`;
     if (globalEnd) url += `end_date=${globalEnd}&`;
+    
+    const gapTol = document.getElementById("gap-tolerance-input").value;
+    if (gapTol) url += `gap_tolerance=${gapTol}&`;
     
     fetch(url)
         .then(res => res.json())
