@@ -94,7 +94,7 @@ class ExpenditureItem:
         br = _clean(row.get("Bill Rate"))
         self.bill_rate = br * 8.0 if br is not None else None
         self.raw_cost = _clean(row.get("Raw Cost"))
-        self.bill_amount = _clean(row.get("Bill Amount"))
+        self.bill_amount = _clean(row.get("Project Transfer Price"))
         self.invoice_type = _clean(row.get("Invoice Type"))
         self.date = excel_serial_to_date(_clean(row.get("Expenditure Item Date")))
         # Colonne de correlation pour la detection d'anomalie
@@ -141,6 +141,22 @@ class ICBPipeline:
 
     def load(self, path):
         df_raw = fast_load_excel(path)
+
+        # --- Detection dynamique de la colonne "Project Transfer Price" ---
+        ptp_col = None
+        for col in df_raw.columns:
+            if col is not None and str(col).strip().lower() == "project transfer price":
+                ptp_col = col
+                break
+
+        if ptp_col is None:
+            print("[ERROR] Colonne 'Project Transfer Price' introuvable dans le fichier ICB.")
+            print(f"  Colonnes disponibles : {list(df_raw.columns)}")
+        elif ptp_col != "Project Transfer Price":
+            # Renommer vers le nom canonique attendu par ExpenditureItem
+            df_raw = df_raw.rename(columns={ptp_col: "Project Transfer Price"})
+            print(f"[INFO] Colonne '{ptp_col}' renommee en 'Project Transfer Price'")
+
         self.items = [ExpenditureItem(row) for row in df_raw.to_dict("records")]
 
     def load_forecast(self, path):
@@ -598,7 +614,7 @@ class ICBPipeline:
             print(f"  Lignes ignorees      : {rows_skipped}")
             print(f"  Entrees forecast     : {len(self.forecast_data)}")
             print(f"  Cellules remplies    : {cells_filled} "
-                  f"(NCR + Working Days + Bill Amount)")
+                  f"(NCR + Working Days + Cost)")
             print(
                 f"\n[FORECAST IMPORT] {len(projects_found)} projets, "
                 f"{total_matched_cons}/{total_cons} consultants matches, "
@@ -821,7 +837,7 @@ class ICBPipeline:
                     "Project Name", 
                     "CC Project Number", 
                     "Working Days", 
-                    "Bill Amount", 
+                    "Cost", 
                     "Forecast bill amount", 
                     "Gap", 
                     "Raw Cost", 
@@ -894,7 +910,7 @@ class ICBPipeline:
                             if ncr_icb and ncr_fc and abs(ncr_icb - ncr_fc) > gap_tolerance:
                                 details_ncr.append(f"{label} ICB={ncr_icb}/Forecast={ncr_fc}")
 
-                            # Comparaison Bill Amount
+                            # Comparaison Cost
                             ba_icb = round(cons['total_bill_amount'], 2)
                             ba_fc = round(fd['bill_amount'], 2)
                             if abs(ba_icb - ba_fc) > gap_tolerance:
@@ -911,9 +927,9 @@ class ICBPipeline:
                             if details_ba:
                                 details_ba.sort(key=lambda x: x[0], reverse=True)
                                 entries = [f"{x[1]} ICB={x[2]}/Forecast={x[3]}" for x in details_ba]
-                                parts.append(f"Probleme avec Bill Amount : {_limit_list(entries)}")
+                                parts.append(f"Probleme avec Cost : {_limit_list(entries)}")
                             else:
-                                parts.append("Probleme avec Bill Amount (a verifier manuellement)")
+                                parts.append("Probleme avec Cost (a verifier manuellement)")
 
                         comment = "\n".join(parts)
 
@@ -922,7 +938,7 @@ class ICBPipeline:
                         cc['project_name'] or "", # 2. Project Name
                         cc['cc_project_number'], # 3. CC Project Number
                         cc['totals']['working_days'], # 4. Working Days
-                        cc['totals']['bill_amount'], # 5. Bill Amount
+                        cc['totals']['bill_amount'], # 5. Cost
                         forecast_cell_value, # 6. Forecast bill amount
                         f"=E{current_row}-F{current_row}", # 7. Gap
                         cc['totals']['raw_cost'], # 8. Raw Cost
@@ -954,7 +970,7 @@ class ICBPipeline:
                 ws.column_dimensions['B'].width = 40 # Project Name
                 ws.column_dimensions['C'].width = 25 # CC Project Number
                 ws.column_dimensions['D'].width = 15 # Working Days
-                ws.column_dimensions['E'].width = 15 # Bill Amount
+                ws.column_dimensions['E'].width = 15 # Cost
                 ws.column_dimensions['F'].width = 20 # Forecast bill amount
                 ws.column_dimensions['G'].width = 15 # Gap
                 ws.column_dimensions['H'].width = 15 # Raw Cost
@@ -1072,14 +1088,6 @@ def get_transactions():
         if i.employee_number == emp and i.cc_project_number == cc_proj
     ]
     
-    print("\n" + "=" * 80)
-    print(f"[DIAG-BACKEND] QUERY: employee='{emp}', cc_project='{cc_proj}', month='{month}', start='{start_date}', end='{end_date}'")
-    print(f"[DIAG-BACKEND] MATCHES: {len(txns)} items trouves")
-    if len(txns) > 0:
-        print("[DIAG-BACKEND] TOP 3 ITEMS:")
-        for idx, t in enumerate(txns[:3]):
-            print(f"  {idx+1}. Emp={t.employee_number} | CC={t.cc_project_number} | Date={t.date} | Cost={t.raw_cost} | Desc={t.expenditure_type}")
-    
     result = []
     for t in txns:
         result.append({
@@ -1094,11 +1102,6 @@ def get_transactions():
             "ncr_correlation": round(t.ncr_correlation, 4) if t.ncr_correlation is not None else None,
             "has_anomaly": t.has_anomaly,
         })
-    
-    import json
-    json_str = json.dumps(result)
-    print(f"[DIAG-BACKEND] JSON SIZE: {len(json_str)} caracteres")
-    print("=" * 80 + "\n")
     
     return jsonify(result)
 
