@@ -90,16 +90,16 @@ class ExpenditureItem:
         self.emp_grade = _clean(row.get("Emp Grade"))
         self.expenditure_type = _clean(row.get("Expenditure Type"))
         self.uom = _clean(row.get("UOM"))
-        self.quantity = _clean(row.get("Quantity"))
-        br = _clean(row.get("Bill Rate"))
+        self.quantity = self._safe_float(_clean(row.get("Quantity")))
+        br = self._safe_float(_clean(row.get("Bill Rate")))
         self.bill_rate = br * 8.0 if br is not None else None
-        self.raw_cost = _clean(row.get("Raw Cost"))
-        self.bill_amount = _clean(row.get("Project Transfer Price"))
+        self.raw_cost = self._safe_float(_clean(row.get("Raw Cost")))
+        self.bill_amount = self._safe_float(_clean(row.get("Project Transfer Price")))
         self.invoice_type = _clean(row.get("Invoice Type"))
         self.date = excel_serial_to_date(_clean(row.get("Expenditure Item Date")))
         # Colonne de correlation pour la detection d'anomalie
         raw_corr = _clean(row.get("FULL NCR to Direct NCR Correlation"))
-        self.ncr_correlation = float(raw_corr) if raw_corr is not None else None
+        self.ncr_correlation = self._safe_float(raw_corr)
 
     @property
     def month_key(self):
@@ -113,6 +113,24 @@ class ExpenditureItem:
         val = abs(self.ncr_correlation)
         return val < (NCR_CORRELATION_TARGET - NCR_CORRELATION_TOLERANCE) or \
                val > (NCR_CORRELATION_TARGET + NCR_CORRELATION_TOLERANCE)
+
+    @staticmethod
+    def _safe_float(value):
+        """Convertit une valeur en float de maniere securisee.
+        Retourne None si la valeur est None ou non convertible.
+        Gere le cas ou Excel renvoie des nombres sous forme de string."""
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        # Tenter la conversion depuis une string
+        try:
+            f = float(value)
+            if math.isnan(f) or math.isinf(f):
+                return None
+            return f
+        except (ValueError, TypeError):
+            return None
 
     @staticmethod
     def _normalize_key(value):
