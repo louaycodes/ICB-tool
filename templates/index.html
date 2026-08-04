@@ -335,14 +335,14 @@ function renderHierarchy(ccProjects) {
             ? esc(cc.project_name) + ' — ' + esc(cc.cc_project_number)
             : esc(cc.cc_project_number);
         ccRow.innerHTML =
-            '<td colspan="4"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
-            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
-            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
-            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
-            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
-            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
-            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '" style="color:var(--color-accent-light); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
-            '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>';
+            '\x3ctd colspan="4"\x3e\x3cspan class="toggle-icon"\x3e&#9660;\x3c/span\x3e ' + label + '\x3c/td\x3e' +
+            '\x3ctd class="num' + (ccGapNcr ? ' cell-gap' : '') + '"\x3e' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '\x3c/td\x3e' + // NCR ICB
+            '\x3ctd class="num' + (ccGapNcr ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;"\x3e' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '\x3c/td\x3e' + // NCR FORECAST
+            '\x3ctd class="num' + (ccGapWd ? ' cell-gap' : '') + '"\x3e' + fmt(cc.totals.working_days) + '\x3c/td\x3e' + // WD ICB
+            '\x3ctd class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;"\x3e' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '\x3c/td\x3e' + // WD FORECAST
+            '\x3ctd class="num' + (ccGapBa ? ' cell-gap' : '') + '"\x3e' + fmt(cc.totals.bill_amount) + '\x3c/td\x3e' + // BA ICB
+            '\x3ctd class="num' + (ccGapBa ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;"\x3e' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '\x3c/td\x3e' + // BA FORECAST
+            '\x3ctd class="num"\x3e' + fmt(cc.totals.raw_cost) + '\x3c/td\x3e';
         ccRow.onclick = () => toggleCC(cc.cc_project_number);
         tbody.appendChild(ccRow);
 

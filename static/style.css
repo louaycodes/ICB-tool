@@ -422,13 +422,15 @@ body {
 }
 
 .row-cc td.cell-gap {
-    background: rgba(252, 129, 129, 0.22) !important;
-    border-left: 2px solid rgba(252, 165, 165, 0.6) !important;
+    background: rgba(252, 129, 129, 0.35) !important;
+    border-left: 2px solid rgba(252, 165, 165, 0.7) !important;
+    color: #fff !important;
 }
 
 .row-totals td.cell-gap {
     background: rgba(220, 38, 38, 0.10) !important;
     border-left: 2px solid rgba(220, 38, 38, 0.45) !important;
+    color: #991b1b !important;
 }
 
 .h-table td.label-indent-1 {
