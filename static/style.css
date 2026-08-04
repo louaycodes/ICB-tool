@@ -415,22 +415,21 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
-/* ICB vs FORECAST gap highlight */
+/* ICB vs FORECAST gap highlight — rouge vif + texte blanc */
 .h-table td.cell-gap {
-    background: rgba(220, 38, 38, 0.12) !important;
-    border-left: 2px solid rgba(220, 38, 38, 0.55) !important;
+    background: #dc2626 !important;
+    color: #fff !important;
+    font-weight: 600;
 }
 
 .row-cc td.cell-gap {
-    background: rgba(252, 129, 129, 0.35) !important;
-    border-left: 2px solid rgba(252, 165, 165, 0.7) !important;
+    background: #b91c1c !important;
     color: #fff !important;
 }
 
 .row-totals td.cell-gap {
-    background: rgba(220, 38, 38, 0.10) !important;
-    border-left: 2px solid rgba(220, 38, 38, 0.45) !important;
-    color: #991b1b !important;
+    background: #dc2626 !important;
+    color: #fff !important;
 }
 
 .h-table td.label-indent-1 {

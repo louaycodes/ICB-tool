@@ -80,7 +80,7 @@
                             <th rowspan="2" class="col-group-right">Grade</th>
                             <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">NCR</th>
                             <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Working Days</th>
-                            <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Cost</th>
+                            <th colspan="3" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Cost</th>
                             <th rowspan="2" class="num">Raw Cost</th>
                         </tr>
                         <tr class="sub-header-row">
@@ -89,7 +89,8 @@
                             <th class="num sub-header col-sep">ICB</th>
                             <th class="num sub-header col-group-right">FORECAST</th>
                             <th class="num sub-header col-sep">ICB</th>
-                            <th class="num sub-header col-group-right">FORECAST</th>
+                            <th class="num sub-header col-sep">FORECAST</th>
+                            <th class="num sub-header col-group-right">GAP</th>
                         </tr>
                     </thead>
                     <tbody id="table-body"></tbody>
@@ -316,7 +317,7 @@ function renderHierarchy(ccProjects) {
 
     if (!ccProjects || ccProjects.length === 0) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="8" style="text-align:center;padding:32px;color:#718096;">Aucune donnee pour cette periode.</td>';
+        tr.innerHTML = '<td colspan="12" style="text-align:center;padding:32px;color:#718096;">Aucune donnee pour cette periode.</td>';
         tbody.appendChild(tr);
         return;
     }
@@ -334,15 +335,18 @@ function renderHierarchy(ccProjects) {
         const label = cc.project_name
             ? esc(cc.project_name) + ' — ' + esc(cc.cc_project_number)
             : esc(cc.cc_project_number);
+        // Compute Cost gap (absolute value)
+        const ccCostGapVal = (cc.totals.forecast_working_days > 0) ? Math.abs(cc.totals.bill_amount - cc.totals.forecast_bill_amount) : null;
         ccRow.innerHTML =
-            '\x3ctd colspan="4"\x3e\x3cspan class="toggle-icon"\x3e&#9660;\x3c/span\x3e ' + label + '\x3c/td\x3e' +
-            '\x3ctd class="num' + (ccGapNcr ? ' cell-gap' : '') + '"\x3e' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '\x3c/td\x3e' + // NCR ICB
-            '\x3ctd class="num' + (ccGapNcr ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;"\x3e' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '\x3c/td\x3e' + // NCR FORECAST
-            '\x3ctd class="num' + (ccGapWd ? ' cell-gap' : '') + '"\x3e' + fmt(cc.totals.working_days) + '\x3c/td\x3e' + // WD ICB
-            '\x3ctd class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;"\x3e' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '\x3c/td\x3e' + // WD FORECAST
-            '\x3ctd class="num' + (ccGapBa ? ' cell-gap' : '') + '"\x3e' + fmt(cc.totals.bill_amount) + '\x3c/td\x3e' + // BA ICB
-            '\x3ctd class="num' + (ccGapBa ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;"\x3e' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '\x3c/td\x3e' + // BA FORECAST
-            '\x3ctd class="num"\x3e' + fmt(cc.totals.raw_cost) + '\x3c/td\x3e';
+            '<td colspan="4"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
+            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
+            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
+            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && ccCostGapVal > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>' + // COST GAP
+            '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>';
         ccRow.onclick = () => toggleCC(cc.cc_project_number);
         tbody.appendChild(ccRow);
 
@@ -362,6 +366,8 @@ function renderHierarchy(ccProjects) {
             consRow.dataset.cc = cc.cc_project_number;
             consRow.dataset.emp = cons.employee_id;
             consRow.dataset.projectname = cc.project_name || "";
+            // Compute Cost gap per consultant (absolute value)
+            const consCostGapVal = (cons.forecast_working_days > 0) ? Math.abs(cons.total_bill_amount - cons.forecast_bill_amount) : null;
             consRow.innerHTML =
                 '<td class="label-indent-1"></td>' +
                 '<td>' + esc(cons.employee_id) + '</td>' +
@@ -373,6 +379,7 @@ function renderHierarchy(ccProjects) {
                 '<td class="num' + (gapWd ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_working_days) : '') + '</td>' + // WD FORECAST
                 '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + fmt(cons.total_bill_amount) + '</td>' + // BA ICB
                 '<td class="num' + (gapBa ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+                '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + (consCostGapVal != null && consCostGapVal > getGapTolerance() ? fmt(consCostGapVal) : '') + '</td>' + // COST GAP
                 '<td class="num">' + fmt(cons.total_raw_cost) + '</td>';
             consRow.dataset.consName = cons.name;
             consRow.onclick = (e) => { e.stopPropagation(); toggleDetail(consRow); };
@@ -384,6 +391,7 @@ function renderHierarchy(ccProjects) {
         totRow.className = "row-totals";
         totRow.style.display = "none";
         totRow.dataset.cc = cc.cc_project_number;
+        // Reuse ccCostGapVal computed above for totals
         totRow.innerHTML =
             '<td class="label-indent-1"></td>' +
             '<td colspan="3">TOTAL ' + esc(cc.cc_project_number) + '</td>' +
@@ -393,6 +401,7 @@ function renderHierarchy(ccProjects) {
             '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
             '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
             '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && ccCostGapVal > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>' + // COST GAP
             '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>';
         tbody.appendChild(totRow);
     });
@@ -452,7 +461,7 @@ async function toggleDetail(rowEl) {
     detailRow.className = "row-detail-inline";
     detailRow.dataset.cc = ccProject;
     const td = document.createElement("td");
-    td.setAttribute("colspan", "11");
+    td.setAttribute("colspan", "12");
 
     let html = '<div class="inline-detail">';
     html += '<div class="inline-detail__header">';
