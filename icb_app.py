@@ -217,7 +217,7 @@ class ICBPipeline:
         SCAN_MAX_COL = 200  # ne pas scanner les colonnes fantomes Excel
 
         # Marqueurs d'identite attendus dans la ligne d'en-tetes
-        IDENTITY_MARKERS = {'project num', 'project name', 'ggid',
+        IDENTITY_MARKERS = {'project num', 'project name', 'icb id',
                             'employee name', 'grade'}
 
         # Mapping noms de mois FR + EN -> numero de mois (1-12)
@@ -312,7 +312,7 @@ class ICBPipeline:
         IDENTITY_LOOKUP = {
             'project num': 'project_num',
             'project name': 'project_name',
-            'ggid': 'ggid',
+            'icb id': 'icb_id',
             'employee name': 'employee_name',
         }
 
@@ -325,14 +325,40 @@ class ICBPipeline:
                 if field not in identity_cols:
                     identity_cols[field] = col_0
 
+        # --- Detection speciale pour ICB ID (peut etre dans une colonne cachee) ---
+        if 'icb_id' not in identity_cols:
+            print("  [INFO] 'ICB ID' non trouvee dans les colonnes visibles, "
+                  "recherche dans les colonnes cachees...")
+            for cell in next(ws.iter_rows(min_row=header_row_idx,
+                                          max_row=header_row_idx,
+                                          max_col=SCAN_MAX_COL,
+                                          values_only=False)):
+                if cell.value is not None and isinstance(cell.value, str):
+                    if cell.value.strip().lower() == 'icb id':
+                        c0 = cell.column - 1
+                        col_letter = _col_letter(c0)
+                        # Verifier si la colonne est cachee
+                        is_hidden = False
+                        try:
+                            dim = ws.column_dimensions.get(col_letter)
+                            if dim and dim.hidden:
+                                is_hidden = True
+                        except Exception:
+                            pass
+                        identity_cols['icb_id'] = c0
+                        print(f"  [OK] 'ICB ID' trouvee en colonne {col_letter} "
+                              f"(0-idx {c0})"
+                              f"{' [COLONNE CACHEE]' if is_hidden else ''}")
+                        break
+
         col_proj = identity_cols.get('project_num')
         col_proj_name = identity_cols.get('project_name')
-        col_ggid = identity_cols.get('ggid')
+        col_icb_id = identity_cols.get('icb_id')
         col_emp_name = identity_cols.get('employee_name')
 
         for label, idx in [('Project Num', col_proj),
                            ('Project Name', col_proj_name),
-                           ('GGID', col_ggid),
+                           ('ICB ID', col_icb_id),
                            ('Employee Name', col_emp_name)]:
             if idx is not None:
                 print(f"  [OK] '{label}' -> colonne {_col_letter(idx)} "
@@ -341,9 +367,9 @@ class ICBPipeline:
                 print(f"  [WARNING] '{label}' introuvable dans la ligne "
                       f"d'en-tetes")
 
-        if col_proj is None or col_ggid is None:
+        if col_proj is None or col_icb_id is None:
             print("  [ERROR] Colonnes obligatoires manquantes "
-                  "(Project Num et/ou GGID). Import annule.")
+                  "(Project Num et/ou ICB ID). Import annule.")
             wb.close()
             return
 
@@ -447,7 +473,7 @@ class ICBPipeline:
         print("\n--- 4. DETECTION DES BLOCS PROJETS ---")
 
         proj_col_1idx = col_proj + 1   # 1-indexed pour l'API merged_cells
-        ggid_col_1idx = col_ggid + 1
+        icb_id_col_1idx = col_icb_id + 1
         emp_col_1idx = (col_emp_name + 1) if col_emp_name is not None else None
 
         merged_ranges = sorted(
@@ -463,10 +489,10 @@ class ICBPipeline:
                 anchor = ws.cell(row=mr.min_row, column=proj_col_1idx).value
                 n_rows = mr.max_row - mr.min_row + 1
                 tot_row = mr.max_row + 1
-                tot_ggid = ws.cell(row=tot_row, column=ggid_col_1idx).value
+                tot_icb_id = ws.cell(row=tot_row, column=icb_id_col_1idx).value
                 tot_emp = (ws.cell(row=tot_row, column=emp_col_1idx).value
                            if emp_col_1idx else None)
-                has_total = (tot_ggid is None
+                has_total = (tot_icb_id is None
                              and (emp_col_1idx is None or tot_emp is None))
                 print(
                     f"    Projet '{anchor}' : lignes {mr.min_row}-{mr.max_row} "
@@ -483,7 +509,7 @@ class ICBPipeline:
                     min_row=header_row_idx + 1, min_col=1,
                     max_col=SCAN_MAX_COL, values_only=False):
                 p_val = row_cells[col_proj].value if col_proj < len(row_cells) else None
-                g_val = row_cells[col_ggid].value if col_ggid < len(row_cells) else None
+                g_val = row_cells[col_icb_id].value if col_icb_id < len(row_cells) else None
                 if p_val is not None and g_val is not None:
                     proj_groups.setdefault(
                         str(p_val).strip(), []).append(row_cells[0].row)
@@ -521,7 +547,7 @@ class ICBPipeline:
                     return None
 
                 proj_val = _safe(col_proj)
-                ggid_val = _safe(col_ggid)
+                icb_id_val = _safe(col_icb_id)
 
                 # Mettre a jour le projet courant
                 if proj_val is not None:
@@ -531,23 +557,23 @@ class ICBPipeline:
                         continue
                     current_proj = proj_val
 
-                # Ignorer les lignes Total (GGID vide)
-                if ggid_val is None:
+                # Ignorer les lignes Total (ICB ID vide)
+                if icb_id_val is None:
                     rows_skipped += 1
                     continue
 
                 rows_processed += 1
                 norm_proj = ExpenditureItem._normalize_key(current_proj)
-                norm_ggid = str(ggid_val).strip().replace("6427_", "")
+                norm_icb_id = str(icb_id_val).strip().replace("6427_", "")
 
                 # Stocker le nom du consultant depuis le forecast
                 emp_name_val = _safe(col_emp_name)
                 if emp_name_val is not None:
-                    self.forecast_names[(norm_proj, norm_ggid)] = str(emp_name_val).strip()
+                    self.forecast_names[(norm_proj, norm_icb_id)] = str(emp_name_val).strip()
 
                 projects_found.add(norm_proj)
                 consultants_by_project.setdefault(norm_proj, set()).add(
-                    (str(ggid_val).strip(), norm_ggid)
+                    (str(icb_id_val).strip(), norm_icb_id)
                 )
 
                 for month_num, block in sorted(month_blocks.items()):
@@ -559,7 +585,7 @@ class ICBPipeline:
 
                     if frc != 0 or prod != 0 or cost != 0:
                         self.forecast_data[
-                            (norm_proj, norm_ggid, month_key)
+                            (norm_proj, norm_icb_id, month_key)
                         ] = {
                             "ncr": frc,
                             "working_days": prod,
@@ -599,14 +625,14 @@ class ICBPipeline:
             total_unmatched_cons = 0
             for proj_norm, cons_set in consultants_by_project.items():
                 icb_emps = icb_employees_by_project.get(proj_norm, set())
-                for raw_ggid, norm_ggid in sorted(cons_set):
-                    if norm_ggid in icb_emps:
+                for raw_id, norm_id in sorted(cons_set):
+                    if norm_id in icb_emps:
                         total_matched_cons += 1
                     else:
                         total_unmatched_cons += 1
                         print(
-                            f"  [NO MATCH] Consultant brut='{raw_ggid}', "
-                            f"normalise='{norm_ggid}' dans projet "
+                            f"  [NO MATCH] Consultant brut='{raw_id}', "
+                            f"normalise='{norm_id}' dans projet "
                             f"'{proj_norm}' — absent de l'ICB"
                         )
 
@@ -625,8 +651,8 @@ class ICBPipeline:
             print("\n--- 6. RESULTAT FINAL ---")
             print(f"  En-tetes detectes    : ligne {header_row_idx}")
             print(f"  Colonnes identite    : Project Num="
-                  f"{_col_letter(col_proj)}, GGID="
-                  f"{_col_letter(col_ggid)}")
+                  f"{_col_letter(col_proj)}, ICB ID="
+                  f"{_col_letter(col_icb_id)}")
             print(f"  Blocs mensuels       : {len(month_blocks)}")
             print(f"  Lignes consultants   : {rows_processed}")
             print(f"  Lignes ignorees      : {rows_skipped}")
