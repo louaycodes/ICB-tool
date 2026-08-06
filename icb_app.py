@@ -1102,6 +1102,25 @@ def upload_forecast():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/reset", methods=["POST"])
+def reset_data():
+    """Remet l'application a zero : vide le pipeline et supprime les fichiers temporaires."""
+    global pipeline
+    pipeline = None
+
+    # Supprimer les fichiers uploades
+    upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
+    for fname in ("current_icb.xlsx", "current_forecast.xlsx"):
+        fpath = os.path.join(upload_dir, fname)
+        if os.path.exists(fpath):
+            try:
+                os.remove(fpath)
+            except OSError:
+                pass
+
+    return jsonify({"message": "Donnees dechargees avec succes."})
+
+
 @app.route("/api/hierarchy")
 def get_hierarchy():
     global pipeline

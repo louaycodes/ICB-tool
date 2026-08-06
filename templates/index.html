@@ -25,6 +25,9 @@
         <button class="btn btn--upload" id="btn-upload-forecast" onclick="document.getElementById('forecast-input').click()" style="display:none; background-color: var(--color-accent-light);">
             Importer Forecast
         </button>
+        <button class="btn btn--close" id="btn-reset" onclick="resetApp()" style="display:none;">
+            Décharger
+        </button>
         <input type="file" id="file-input" accept=".xlsx" onchange="uploadFile(this)">
         <input type="file" id="forecast-input" accept=".xlsx" onchange="uploadForecast(this)" style="display:none;">
         <div class="header__search" id="search-wrapper" style="display:none;">
@@ -168,6 +171,7 @@ async function uploadFile(input) {
         
         // Afficher le bouton forecast apres avoir upload l'ICB
         document.getElementById("btn-upload-forecast").style.display = "inline-block";
+        document.getElementById("btn-reset").style.display = "inline-flex";
         document.getElementById("search-wrapper").style.display = "flex";
         document.getElementById("search-input").value = "";
         
@@ -600,6 +604,48 @@ function submitExport() {
         .catch(err => {
             alert("Erreur réseau : " + err);
         });
+}
+// -- Reset / Décharger --
+async function resetApp() {
+    try {
+        await fetch("/api/reset", { method: "POST" });
+    } catch (e) {
+        // ignore network errors on reset
+    }
+
+    // Reset state
+    currentMonth = null;
+    availableMonths = [];
+    globalStart = null;
+    globalEnd = null;
+    selectedConsRow = null;
+    window.currentHierarchyData = null;
+
+    // Reset UI
+    document.getElementById("table-body").innerHTML = "";
+    document.getElementById("table-panel").style.display = "none";
+    document.getElementById("empty-state").style.display = "flex";
+    document.getElementById("global-filters").style.display = "none";
+    document.getElementById("month-bar").classList.remove("visible");
+    document.getElementById("btn-export").style.display = "none";
+    document.getElementById("btn-upload-forecast").style.display = "none";
+    document.getElementById("btn-reset").style.display = "none";
+    document.getElementById("search-wrapper").style.display = "none";
+    document.getElementById("search-input").value = "";
+    document.getElementById("global-start").value = "";
+    document.getElementById("global-end").value = "";
+
+    // Re-show upload button
+    document.getElementById("btn-upload").style.display = "inline-flex";
+
+    // Reset status
+    const status = document.getElementById("status-text");
+    status.textContent = "Aucun fichier charge";
+    status.classList.remove("header__status--loaded");
+
+    // Clear file inputs
+    document.getElementById("file-input").value = "";
+    document.getElementById("forecast-input").value = "";
 }
 </script>
 </body>
