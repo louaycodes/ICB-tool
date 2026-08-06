@@ -24,18 +24,26 @@ jobs:
         python -m pip install pyinstaller
         if (Test-Path requirements.txt) { python -m pip install -r requirements.txt }
 
-        # S'assurer que le dossier uploads existe pour éviter l'erreur PyInstaller
+        # 1. Créer le dossier uploads s'il est absent
         if (-not (Test-Path uploads)) { New-Item -ItemType Directory -Path uploads }
-        
-        python -m PyInstaller --onefile --windowed `
-          --add-data "templates;templates" `
-          --add-data "static;static" `
-          --add-data "uploads;uploads" `
-          --add-data "forecast.xlsx;." `
-          --add-data "icb.xlsx;." `
-          --add-data "icb2.xlsx;." `
-          --hidden-import openpyxl `
-          icb_desktop.py
+
+        # 2. Construire les arguments d'inclusion dynamique
+        $add_data_args = @(
+          '--add-data', 'templates;templates',
+          '--add-data', 'static;static',
+          '--add-data', 'uploads;uploads'
+        )
+
+        # Inclure les fichiers Excel seulement s'ils existent dans le dépôt
+        foreach ($file in @('forecast.xlsx', 'icb.xlsx', 'icb2.xlsx')) {
+          if (Test-Path $file) {
+            $add_data_args += '--add-data'
+            $add_data_args += "$file;."
+          }
+        }
+
+        # 3. Exécuter PyInstaller
+        python -m PyInstaller --onefile --windowed @add_data_args --hidden-import openpyxl icb_desktop.py
 
     - name: Mettre à disposition le fichier .exe
       uses: actions/upload-artifact@v4
