@@ -5,6 +5,7 @@ via des endpoints JSON pour l'interface web.
 """
 
 import os
+import sys
 import io
 import math
 import tempfile
@@ -13,6 +14,22 @@ from datetime import datetime, date, timedelta
 from collections import OrderedDict
 from flask import Flask, request, jsonify, render_template
 from openpyxl import load_workbook
+
+def get_resource_path(relative_path):
+    """ Obtient le chemin absolu vers la ressource, fonctionne en dev et pour PyInstaller """
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
+# Initialisation de Flask avec les chemins gérés par PyInstaller
+app = Flask(
+    __name__,
+    template_folder=get_resource_path('templates'),
+    static_folder=get_resource_path('static')
+)
+
+# Si vous accédez au dossier uploads dans votre code, utilisez aussi :
+UPLOAD_FOLDER = get_resource_path('uploads')
 
 # --- Parametres metier ---
 EXPENDITURE_TYPES = [
@@ -1221,3 +1238,5 @@ def start_server(port=5050):
     log = logging.getLogger("werkzeug")
     log.setLevel(logging.ERROR)
     app.run(debug=True, port=port, use_reloader=False)
+
+    
