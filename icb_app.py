@@ -863,7 +863,7 @@ class ICBPipeline:
     def export_to_excel(self, month_filter, start_date, end_date, gap_tolerance=2.0):
         import io
         from openpyxl import Workbook
-        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from openpyxl.worksheet.table import Table, TableStyleInfo
         from openpyxl.utils import get_column_letter
 
@@ -1001,7 +1001,7 @@ class ICBPipeline:
                         cc['totals']['working_days'], # 4. Working Days
                         cc['totals']['bill_amount'], # 5. Cost
                         forecast_cell_value, # 6. Forecast bill amount
-                        f"=E{current_row}-F{current_row}", # 7. Gap
+                        f"=E{current_row}-F{current_row}", # 7. Gap (signed, no abs)
                         cc['totals']['raw_cost'], # 8. Raw Cost
                         "", # 9. Issue Type
                         comment # 10. Generated comment
@@ -1038,10 +1038,497 @@ class ICBPipeline:
                 ws.column_dimensions['I'].width = 25 # Issue Type
                 ws.column_dimensions['J'].width = 60 # Generated comment
 
+            # =================================================================
+            # FEUILLE KPI DASHBOARD
+            # =================================================================
+            self._build_kpi_sheet(wb, months_in_range, start_date, end_date, gap_tolerance)
+
         buffer = io.BytesIO()
         wb.save(buffer)
         buffer.seek(0)
         return buffer
+
+    def _build_kpi_sheet(self, wb, months_in_range, start_date, end_date, gap_tolerance):
+        """Construit la feuille KPI Dashboard dans le workbook d'export.
+        
+        Sections :
+        1. Synthese mensuelle (Cost, Forecast, Gap, WD, Raw Cost, Nb projets, Nb consultants)
+        2. Bill Amount Cumule par mois (progression mois apres mois)
+        3. Synthese par projet (toutes periodes confondues)
+        4. Top consultants par Cost
+        5. Detail consultant par mois
+        """
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
+        from openpyxl.utils import get_column_letter
+
+        ws = wb.create_sheet(title="KPI Dashboard")
+
+        # ---- Styles reutilisables ----
+        title_font = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
+        section_font = Font(name="Calibri", size=12, bold=True, color="FFFFFF")
+        header_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        normal_font = Font(name="Calibri", size=10)
+        number_font = Font(name="Calibri", size=10)
+
+        dark_fill = PatternFill(start_color="1B2A4A", end_color="1B2A4A", fill_type="solid")
+        section_fill = PatternFill(start_color="2E4057", end_color="2E4057", fill_type="solid")
+        header_fill = PatternFill(start_color="3A5A8C", end_color="3A5A8C", fill_type="solid")
+        accent_fill = PatternFill(start_color="1A73E8", end_color="1A73E8", fill_type="solid")
+        light_row_fill = PatternFill(start_color="EBF0F7", end_color="EBF0F7", fill_type="solid")
+        cumul_fill = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")
+        negative_fill = PatternFill(start_color="FFEBEE", end_color="FFEBEE", fill_type="solid")
+        positive_fill = PatternFill(start_color="E8F5E9", end_color="E8F5E9", fill_type="solid")
+
+        center_align = Alignment(horizontal="center", vertical="center")
+        right_align = Alignment(horizontal="right", vertical="center")
+        left_align = Alignment(horizontal="left", vertical="center")
+        wrap_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        thin_border = Border(
+            left=Side(style="thin", color="B0BEC5"),
+            right=Side(style="thin", color="B0BEC5"),
+            top=Side(style="thin", color="B0BEC5"),
+            bottom=Side(style="thin", color="B0BEC5"),
+        )
+
+        num_fmt_money = '#,##0.00'
+        num_fmt_days = '#,##0.00'
+        num_fmt_int = '#,##0'
+        num_fmt_pct = '0.0%'
+
+        def _style_header_row(ws, row, col_start, col_end, fill=None):
+            f = fill or header_fill
+            for c in range(col_start, col_end + 1):
+                cell = ws.cell(row=row, column=c)
+                cell.font = header_font
+                cell.fill = f
+                cell.alignment = center_align
+                cell.border = thin_border
+
+        def _style_data_cell(ws, row, col, fmt=None, align=None, fill=None):
+            cell = ws.cell(row=row, column=col)
+            cell.font = number_font
+            cell.border = thin_border
+            if fmt:
+                cell.number_format = fmt
+            if align:
+                cell.alignment = align
+            else:
+                cell.alignment = right_align
+            if fill:
+                cell.fill = fill
+            return cell
+
+        def _write_section_title(ws, row, title, col_span=8):
+            cell = ws.cell(row=row, column=1, value=title)
+            cell.font = section_font
+            cell.fill = section_fill
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+            for c in range(1, col_span + 1):
+                ws.cell(row=row, column=c).fill = section_fill
+                ws.cell(row=row, column=c).border = thin_border
+
+        # ---- Collecter toutes les donnees par mois ----
+        monthly_stats = {}  # month -> {cost, forecast, gap, wd, raw_cost, nb_proj, nb_cons}
+        project_stats = {}  # cc_proj -> {name, cost, forecast, gap, wd, raw_cost, nb_cons, avg_ncr}
+        consultant_monthly = {}  # (emp_id, name) -> {month -> {cost, wd, ncr, project}}
+
+        for month in months_in_range:
+            data = self.hierarchy_data(month_filter=month, start_date=start_date, end_date=end_date)
+            m_cost = 0.0
+            m_forecast = 0.0
+            m_wd = 0.0
+            m_raw_cost = 0.0
+            m_nb_proj = 0
+            m_nb_cons = 0
+
+            for cc in data:
+                m_nb_proj += 1
+                norm_proj = ExpenditureItem._normalize_key(cc['cc_project_number'])
+                proj_key = cc['cc_project_number']
+
+                # Forecast pour ce projet/mois
+                fc_total = 0.0
+                has_fc = False
+                for fk, fd in self.forecast_data.items():
+                    if fk[0] == norm_proj and fk[2] == month:
+                        has_fc = True
+                        fc_total += fd["bill_amount"]
+
+                m_cost += cc['totals']['bill_amount']
+                m_forecast += fc_total if has_fc else 0
+                m_wd += cc['totals']['working_days']
+                m_raw_cost += cc['totals']['raw_cost']
+                m_nb_cons += len(cc['consultants'])
+
+                # Agreger par projet
+                if proj_key not in project_stats:
+                    project_stats[proj_key] = {
+                        "name": cc['project_name'] or "",
+                        "cost": 0.0, "forecast": 0.0, "wd": 0.0,
+                        "raw_cost": 0.0, "nb_cons": set(), "ncr_sum": 0.0,
+                        "ncr_count": 0, "months_active": []
+                    }
+                ps = project_stats[proj_key]
+                ps["cost"] += cc['totals']['bill_amount']
+                ps["forecast"] += fc_total if has_fc else 0
+                ps["wd"] += cc['totals']['working_days']
+                ps["raw_cost"] += cc['totals']['raw_cost']
+                ps["months_active"].append(month)
+
+                for cons in cc['consultants']:
+                    ps["nb_cons"].add(cons['employee_id'])
+                    if cons['ncr'] and cons['ncr'] > 0:
+                        ps["ncr_sum"] += cons['ncr']
+                        ps["ncr_count"] += 1
+
+                    # Detail consultant mensuel
+                    cons_key = (cons['employee_id'], cons['name'] or "")
+                    if cons_key not in consultant_monthly:
+                        consultant_monthly[cons_key] = {}
+                    if month not in consultant_monthly[cons_key]:
+                        consultant_monthly[cons_key][month] = {
+                            "cost": 0.0, "wd": 0.0, "ncr": 0.0,
+                            "project": cc['project_name'] or proj_key
+                        }
+                    cm = consultant_monthly[cons_key][month]
+                    cm["cost"] += cons['total_bill_amount']
+                    cm["wd"] += cons['working_days']
+                    if cons['ncr'] and cons['ncr'] > 0:
+                        cm["ncr"] = cons['ncr']
+
+            monthly_stats[month] = {
+                "cost": round(m_cost, 2),
+                "forecast": round(m_forecast, 2),
+                "gap": round(m_cost - m_forecast, 2),
+                "wd": round(m_wd, 2),
+                "raw_cost": round(m_raw_cost, 2),
+                "nb_proj": m_nb_proj,
+                "nb_cons": m_nb_cons,
+            }
+
+        # ================================================================
+        # SECTION 0 : TITRE PRINCIPAL
+        # ================================================================
+        row = 1
+        title_cell = ws.cell(row=row, column=1, value="KPI DASHBOARD — ICB Analysis")
+        title_cell.font = title_font
+        title_cell.fill = dark_fill
+        for c in range(1, 10):
+            ws.cell(row=row, column=c).fill = dark_fill
+        row += 1
+        period_label = ""
+        if start_date and end_date:
+            period_label = f"Periode : {start_date} a {end_date}"
+        elif months_in_range:
+            period_label = f"Mois : {months_in_range[0]} a {months_in_range[-1]}"
+        sub_cell = ws.cell(row=row, column=1, value=period_label)
+        sub_cell.font = Font(name="Calibri", size=10, italic=True, color="8899AA")
+        sub_cell.fill = dark_fill
+        for c in range(1, 10):
+            ws.cell(row=row, column=c).fill = dark_fill
+        row += 2
+
+        # ================================================================
+        # SECTION 1 : SYNTHESE MENSUELLE
+        # ================================================================
+        _write_section_title(ws, row, "1. SYNTHESE MENSUELLE", 8)
+        row += 1
+        headers_s1 = ["Mois", "Cost ICB", "Forecast", "Gap (Cost-Forecast)",
+                       "Working Days", "Raw Cost", "Nb Projets", "Nb Consultants"]
+        for c, h in enumerate(headers_s1, 1):
+            ws.cell(row=row, column=c, value=h)
+        _style_header_row(ws, row, 1, len(headers_s1))
+        row += 1
+
+        for m in months_in_range:
+            ms = monthly_stats[m]
+            ws.cell(row=row, column=1, value=m)
+            _style_data_cell(ws, row, 1, align=center_align)
+            ws.cell(row=row, column=2, value=ms["cost"])
+            _style_data_cell(ws, row, 2, fmt=num_fmt_money)
+            ws.cell(row=row, column=3, value=ms["forecast"])
+            _style_data_cell(ws, row, 3, fmt=num_fmt_money)
+            ws.cell(row=row, column=4, value=ms["gap"])
+            gap_fill = negative_fill if ms["gap"] < 0 else (positive_fill if ms["gap"] > gap_tolerance else None)
+            _style_data_cell(ws, row, 4, fmt=num_fmt_money, fill=gap_fill)
+            ws.cell(row=row, column=5, value=ms["wd"])
+            _style_data_cell(ws, row, 5, fmt=num_fmt_days)
+            ws.cell(row=row, column=6, value=ms["raw_cost"])
+            _style_data_cell(ws, row, 6, fmt=num_fmt_money)
+            ws.cell(row=row, column=7, value=ms["nb_proj"])
+            _style_data_cell(ws, row, 7, fmt=num_fmt_int, align=center_align)
+            ws.cell(row=row, column=8, value=ms["nb_cons"])
+            _style_data_cell(ws, row, 8, fmt=num_fmt_int, align=center_align)
+            row += 1
+
+        # Ligne TOTAL
+        ws.cell(row=row, column=1, value="TOTAL")
+        _style_data_cell(ws, row, 1, align=center_align,
+                         fill=accent_fill)
+        ws.cell(row=row, column=1).font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        for c in range(2, 9):
+            ws.cell(row=row, column=c).fill = accent_fill
+            ws.cell(row=row, column=c).font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+            ws.cell(row=row, column=c).border = thin_border
+            ws.cell(row=row, column=c).alignment = right_align
+        total_cost = sum(ms["cost"] for ms in monthly_stats.values())
+        total_fc = sum(ms["forecast"] for ms in monthly_stats.values())
+        total_gap = round(total_cost - total_fc, 2)
+        total_wd = sum(ms["wd"] for ms in monthly_stats.values())
+        total_rc = sum(ms["raw_cost"] for ms in monthly_stats.values())
+        ws.cell(row=row, column=2, value=round(total_cost, 2))
+        ws.cell(row=row, column=2).number_format = num_fmt_money
+        ws.cell(row=row, column=3, value=round(total_fc, 2))
+        ws.cell(row=row, column=3).number_format = num_fmt_money
+        ws.cell(row=row, column=4, value=total_gap)
+        ws.cell(row=row, column=4).number_format = num_fmt_money
+        ws.cell(row=row, column=5, value=round(total_wd, 2))
+        ws.cell(row=row, column=5).number_format = num_fmt_days
+        ws.cell(row=row, column=6, value=round(total_rc, 2))
+        ws.cell(row=row, column=6).number_format = num_fmt_money
+        ws.cell(row=row, column=7, value="")
+        ws.cell(row=row, column=7).alignment = center_align
+        ws.cell(row=row, column=8, value="")
+        ws.cell(row=row, column=8).alignment = center_align
+        row += 2
+
+        # ================================================================
+        # SECTION 2 : BILL AMOUNT CUMULE PAR MOIS
+        # ================================================================
+        _write_section_title(ws, row, "2. BILL AMOUNT CUMULE PAR MOIS (Progression)", 8)
+        row += 1
+        headers_s2 = ["Mois", "Cost ICB du Mois", "Cost ICB Cumule",
+                       "Forecast du Mois", "Forecast Cumule",
+                       "Gap Cumule", "% Progression Cost"]
+        for c, h in enumerate(headers_s2, 1):
+            ws.cell(row=row, column=c, value=h)
+        _style_header_row(ws, row, 1, len(headers_s2))
+        row += 1
+
+        cumul_cost = 0.0
+        cumul_fc = 0.0
+        prev_cumul_cost = 0.0
+        for m in months_in_range:
+            ms = monthly_stats[m]
+            cumul_cost += ms["cost"]
+            cumul_fc += ms["forecast"]
+            pct_progression = ((cumul_cost - prev_cumul_cost) / prev_cumul_cost) if prev_cumul_cost > 0 else None
+
+            ws.cell(row=row, column=1, value=m)
+            _style_data_cell(ws, row, 1, align=center_align)
+            ws.cell(row=row, column=2, value=ms["cost"])
+            _style_data_cell(ws, row, 2, fmt=num_fmt_money)
+            ws.cell(row=row, column=3, value=round(cumul_cost, 2))
+            _style_data_cell(ws, row, 3, fmt=num_fmt_money, fill=cumul_fill)
+            ws.cell(row=row, column=3).font = Font(name="Calibri", size=10, bold=True, color="2E7D32")
+            ws.cell(row=row, column=4, value=ms["forecast"])
+            _style_data_cell(ws, row, 4, fmt=num_fmt_money)
+            ws.cell(row=row, column=5, value=round(cumul_fc, 2))
+            _style_data_cell(ws, row, 5, fmt=num_fmt_money, fill=cumul_fill)
+            ws.cell(row=row, column=5).font = Font(name="Calibri", size=10, bold=True, color="1565C0")
+            ws.cell(row=row, column=6, value=round(cumul_cost - cumul_fc, 2))
+            gap_cumul_fill = negative_fill if (cumul_cost - cumul_fc) < 0 else positive_fill
+            _style_data_cell(ws, row, 6, fmt=num_fmt_money, fill=gap_cumul_fill)
+            if pct_progression is not None:
+                ws.cell(row=row, column=7, value=round(pct_progression, 4))
+                _style_data_cell(ws, row, 7, fmt=num_fmt_pct, align=center_align)
+            else:
+                ws.cell(row=row, column=7, value="—")
+                _style_data_cell(ws, row, 7, align=center_align)
+
+            prev_cumul_cost = cumul_cost
+            row += 1
+
+        row += 1
+
+        # ================================================================
+        # SECTION 3 : SYNTHESE PAR PROJET
+        # ================================================================
+        _write_section_title(ws, row, "3. SYNTHESE PAR PROJET (toutes periodes)", 9)
+        row += 1
+        headers_s3 = ["CC Project Number", "Project Name", "Cost ICB Total",
+                       "Forecast Total", "Gap", "Gap %",
+                       "Working Days", "NCR Moyen", "Nb Consultants"]
+        for c, h in enumerate(headers_s3, 1):
+            ws.cell(row=row, column=c, value=h)
+        _style_header_row(ws, row, 1, len(headers_s3))
+        row += 1
+
+        # Trier par cost decroissant
+        sorted_projects = sorted(project_stats.items(),
+                                 key=lambda x: x[1]["cost"], reverse=True)
+        for proj_key, ps in sorted_projects:
+            gap = round(ps["cost"] - ps["forecast"], 2)
+            gap_pct = (gap / ps["forecast"]) if ps["forecast"] != 0 else None
+            avg_ncr = round(ps["ncr_sum"] / ps["ncr_count"], 2) if ps["ncr_count"] > 0 else 0
+
+            ws.cell(row=row, column=1, value=proj_key)
+            _style_data_cell(ws, row, 1, align=left_align)
+            ws.cell(row=row, column=2, value=ps["name"])
+            _style_data_cell(ws, row, 2, align=left_align)
+            ws.cell(row=row, column=3, value=round(ps["cost"], 2))
+            _style_data_cell(ws, row, 3, fmt=num_fmt_money)
+            ws.cell(row=row, column=4, value=round(ps["forecast"], 2))
+            _style_data_cell(ws, row, 4, fmt=num_fmt_money)
+            ws.cell(row=row, column=5, value=gap)
+            g_fill = negative_fill if gap < 0 else (positive_fill if gap > gap_tolerance else None)
+            _style_data_cell(ws, row, 5, fmt=num_fmt_money, fill=g_fill)
+            if gap_pct is not None:
+                ws.cell(row=row, column=6, value=round(gap_pct, 4))
+                _style_data_cell(ws, row, 6, fmt=num_fmt_pct, align=center_align)
+            else:
+                ws.cell(row=row, column=6, value="N/A")
+                _style_data_cell(ws, row, 6, align=center_align)
+            ws.cell(row=row, column=7, value=round(ps["wd"], 2))
+            _style_data_cell(ws, row, 7, fmt=num_fmt_days)
+            ws.cell(row=row, column=8, value=avg_ncr)
+            _style_data_cell(ws, row, 8, fmt=num_fmt_money)
+            ws.cell(row=row, column=9, value=len(ps["nb_cons"]))
+            _style_data_cell(ws, row, 9, fmt=num_fmt_int, align=center_align)
+
+            # Alternance de couleur
+            if (row % 2) == 0:
+                for c in range(1, 10):
+                    if ws.cell(row=row, column=c).fill == PatternFill():
+                        ws.cell(row=row, column=c).fill = light_row_fill
+
+            row += 1
+
+        row += 1
+
+        # ================================================================
+        # SECTION 4 : TOP CONSULTANTS PAR COST
+        # ================================================================
+        _write_section_title(ws, row, "4. TOP CONSULTANTS PAR COST (toutes periodes)", 8)
+        row += 1
+        headers_s4 = ["Employee ID", "Nom", "Projet Principal",
+                       "Cost ICB Total", "Working Days Total",
+                       "NCR", "Nb Mois Actifs", "Cost Moyen / Mois"]
+        for c, h in enumerate(headers_s4, 1):
+            ws.cell(row=row, column=c, value=h)
+        _style_header_row(ws, row, 1, len(headers_s4))
+        row += 1
+
+        # Agreger par consultant
+        cons_totals = []
+        for (emp_id, name), months_data in consultant_monthly.items():
+            total_cost = sum(md["cost"] for md in months_data.values())
+            total_wd = sum(md["wd"] for md in months_data.values())
+            ncr_vals = [md["ncr"] for md in months_data.values() if md["ncr"] > 0]
+            avg_ncr = round(sum(ncr_vals) / len(ncr_vals), 2) if ncr_vals else 0
+            # Projet le plus frequent
+            proj_counts = {}
+            for md in months_data.values():
+                proj_counts[md["project"]] = proj_counts.get(md["project"], 0) + 1
+            main_proj = max(proj_counts, key=proj_counts.get) if proj_counts else ""
+            nb_months = len(months_data)
+            avg_cost_month = round(total_cost / nb_months, 2) if nb_months > 0 else 0
+
+            cons_totals.append({
+                "emp_id": emp_id, "name": name, "project": main_proj,
+                "cost": round(total_cost, 2), "wd": round(total_wd, 2),
+                "ncr": avg_ncr, "nb_months": nb_months,
+                "avg_cost_month": avg_cost_month,
+            })
+
+        # Trier par cost decroissant, limiter a 50
+        cons_totals.sort(key=lambda x: x["cost"], reverse=True)
+        for ct in cons_totals[:50]:
+            ws.cell(row=row, column=1, value=ct["emp_id"])
+            _style_data_cell(ws, row, 1, align=left_align)
+            ws.cell(row=row, column=2, value=ct["name"])
+            _style_data_cell(ws, row, 2, align=left_align)
+            ws.cell(row=row, column=3, value=ct["project"])
+            _style_data_cell(ws, row, 3, align=left_align)
+            ws.cell(row=row, column=4, value=ct["cost"])
+            _style_data_cell(ws, row, 4, fmt=num_fmt_money)
+            ws.cell(row=row, column=5, value=ct["wd"])
+            _style_data_cell(ws, row, 5, fmt=num_fmt_days)
+            ws.cell(row=row, column=6, value=ct["ncr"])
+            _style_data_cell(ws, row, 6, fmt=num_fmt_money)
+            ws.cell(row=row, column=7, value=ct["nb_months"])
+            _style_data_cell(ws, row, 7, fmt=num_fmt_int, align=center_align)
+            ws.cell(row=row, column=8, value=ct["avg_cost_month"])
+            _style_data_cell(ws, row, 8, fmt=num_fmt_money)
+
+            if (row % 2) == 0:
+                for c in range(1, 9):
+                    if ws.cell(row=row, column=c).fill == PatternFill():
+                        ws.cell(row=row, column=c).fill = light_row_fill
+            row += 1
+
+        row += 1
+
+        # ================================================================
+        # SECTION 5 : DETAIL CONSULTANT PAR MOIS
+        # ================================================================
+        _write_section_title(ws, row,
+                             "5. DETAIL CONSULTANT PAR MOIS (Cost par consultant par mois)",
+                             3 + len(months_in_range))
+        row += 1
+
+        # Headers : Employee ID | Nom | Projet | Mois1 | Mois2 | ... | TOTAL
+        headers_s5 = ["Employee ID", "Nom", "Projet"] + months_in_range + ["TOTAL"]
+        for c, h in enumerate(headers_s5, 1):
+            ws.cell(row=row, column=c, value=h)
+        _style_header_row(ws, row, 1, len(headers_s5))
+        row += 1
+
+        # Trier par nom
+        sorted_cons = sorted(consultant_monthly.items(),
+                             key=lambda x: x[0][1].lower() if x[0][1] else x[0][0])
+        for (emp_id, name), months_data in sorted_cons:
+            proj_counts = {}
+            for md in months_data.values():
+                proj_counts[md["project"]] = proj_counts.get(md["project"], 0) + 1
+            main_proj = max(proj_counts, key=proj_counts.get) if proj_counts else ""
+
+            ws.cell(row=row, column=1, value=emp_id)
+            _style_data_cell(ws, row, 1, align=left_align)
+            ws.cell(row=row, column=2, value=name)
+            _style_data_cell(ws, row, 2, align=left_align)
+            ws.cell(row=row, column=3, value=main_proj)
+            _style_data_cell(ws, row, 3, align=left_align)
+
+            row_total = 0.0
+            for mi, m in enumerate(months_in_range):
+                col = 4 + mi
+                if m in months_data:
+                    val = round(months_data[m]["cost"], 2)
+                    ws.cell(row=row, column=col, value=val)
+                    row_total += val
+                else:
+                    ws.cell(row=row, column=col, value=0)
+                _style_data_cell(ws, row, col, fmt=num_fmt_money)
+
+            # Colonne TOTAL
+            total_col = 4 + len(months_in_range)
+            ws.cell(row=row, column=total_col, value=round(row_total, 2))
+            _style_data_cell(ws, row, total_col, fmt=num_fmt_money,
+                             fill=cumul_fill)
+            ws.cell(row=row, column=total_col).font = Font(
+                name="Calibri", size=10, bold=True, color="2E7D32")
+
+            if (row % 2) == 0:
+                for c in range(1, total_col + 1):
+                    if ws.cell(row=row, column=c).fill == PatternFill():
+                        ws.cell(row=row, column=c).fill = light_row_fill
+            row += 1
+
+        # ---- Largeurs de colonnes ----
+        ws.column_dimensions['A'].width = 22
+        ws.column_dimensions['B'].width = 35
+        ws.column_dimensions['C'].width = 22
+        ws.column_dimensions['D'].width = 18
+        ws.column_dimensions['E'].width = 18
+        ws.column_dimensions['F'].width = 18
+        ws.column_dimensions['G'].width = 18
+        ws.column_dimensions['H'].width = 18
+        ws.column_dimensions['I'].width = 18
+
+        # Figer la premiere ligne
+        ws.freeze_panes = "A2"
 
 
 # ---------------------------------------------------------------------------

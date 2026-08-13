@@ -126,6 +126,36 @@ L'application repose sur une architecture simple et légère sans base de donné
     * **Fallback final** : "Probleme avec Cost (a verifier manuellement)" si la cause reste diffuse.
   * Maximum 5 consultants affichés par cause, avec indication du nombre d'autres consultants restants.
 
+### Gap signé (sans valeur absolue)
+* **Changement** : La colonne **GAP** dans le tableau UI et dans l'export Excel affiche désormais la **valeur signée** de l'écart (`Cost ICB - Forecast`), et non plus la valeur absolue.
+  * **Positif** : ICB > Forecast (on facture plus que prévu).
+  * **Négatif** : ICB < Forecast (on facture moins que prévu).
+* **Logique de surlignage** : Le surlignage rouge reste déclenché si `|gap| > seuil de tolérance` (la détection utilise toujours la valeur absolue pour identifier les écarts significatifs, mais la valeur affichée montre le sens).
+* **Export Excel** : La formule `=E{row}-F{row}` dans la colonne Gap était déjà signée par nature. Le commentaire du code a été mis à jour pour refléter cette intention.
+
+### Feuille KPI Dashboard dans l'Export Excel
+* **Nouvelle feuille** ajoutée automatiquement à la fin du fichier Excel d'export, intitulée **"KPI Dashboard"**.
+* **5 sections analytiques** stylisées avec couleurs, bordures, et formats numériques :
+
+  1. **Synthèse Mensuelle** : Tableau récapitulatif par mois avec Cost ICB, Forecast, Gap (signé), Working Days, Raw Cost, Nb Projets, Nb Consultants. Ligne TOTAL en bas avec fond bleu accentué. Les écarts négatifs sont surlignés en rouge clair, les positifs en vert clair.
+
+  2. **Bill Amount Cumulé par Mois** *(exigence spécifique)* : Montre la progression du Bill Amount (Cost ICB) mois après mois :
+     * Mois 1 : valeur du mois 1
+     * Mois 2 : valeur cumulée du mois 1 + mois 2
+     * Mois 3 : valeur cumulée du mois 1 + mois 2 + mois 3
+     * Et ainsi de suite...
+     * Inclut aussi le Forecast cumulé, le Gap cumulé, et le pourcentage de progression du cost d'un mois à l'autre.
+     * La colonne Cost ICB Cumulé est en **gras vert** sur fond vert clair, la colonne Forecast Cumulé en **gras bleu**.
+
+  3. **Synthèse par Projet** : Vue consolidée de chaque projet sur toutes les périodes, triée par Cost ICB décroissant. Inclut : Cost ICB Total, Forecast Total, Gap (signé), Gap en %, Working Days, NCR Moyen, Nb Consultants uniques. Alternance de couleur de fond pour la lisibilité.
+
+  4. **Top Consultants par Cost** : Les 50 premiers consultants triés par Cost ICB total décroissant. Inclut : Employee ID, Nom, Projet principal, Cost ICB Total, Working Days Total, NCR moyen, Nb Mois Actifs, Cost Moyen par Mois.
+
+  5. **Détail Consultant par Mois** : Tableau croisé avec un consultant par ligne et un mois par colonne, affichant le Cost ICB de chaque consultant pour chaque mois. Colonne TOTAL en fin de ligne (en gras vert sur fond vert clair). Trié par nom alphabétique.
+
+* **Méthode `_build_kpi_sheet`** : Méthode séparée dans `ICBPipeline` pour la maintenabilité. Appelée automatiquement par `export_to_excel` après la création des onglets mensuels.
+* **Styles** : Palette cohérente avec le thème de l'application (bleu foncé/corporate). Utilise `openpyxl.styles` (Font, PatternFill, Border, Alignment) et des formats numériques Excel natifs (`#,##0.00`, `0.0%`).
+
 ---
 
 ## 5. Notes pour le prochain Agent / Développeur
@@ -141,3 +171,4 @@ L'application repose sur une architecture simple et légère sans base de donné
 * **Nettoyage des NaN (JSON strict)** : L'utilisation de Pandas génère parfois des valeurs `NaN` (float) pour les cellules vides. Pour empêcher que `jsonify` ne produise un token littéral `NaN` (ce qui fait crasher `JSON.parse` côté frontend), toute valeur est passée dans des filtres locaux (ex: `_clean()` dans `ExpenditureItem`, ou `_to_float()`) qui convertissent les `NaN`/`Infinity` en `None` ou `0.0`.
 * **Logique des écarts (Commentaires Export)** : Le rapport Excel n'itère que sur les consultants ICB pour chercher leurs équivalents dans le Forecast. Toute absence est considérée comme un turn-over normal et est ignorée.
 * **Fichier de référence** : Le fichier `structureDetailleICBandForecast.txt` contient la documentation technique détaillée de la structure des deux fichiers Excel (ICB et Forecast), colonnes, types, et règles de mapping.
+* **KPI Dashboard** : La méthode `_build_kpi_sheet` est appelée par `export_to_excel` et collecte toutes les données nécessaires en itérant sur chaque mois via `hierarchy_data()`. Les données sont d'abord agrégées en mémoire (`monthly_stats`, `project_stats`, `consultant_monthly`) puis écrites section par section. La performance est acceptable car le volume de données KPI est faible comparé aux données brutes.
