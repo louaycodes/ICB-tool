@@ -707,7 +707,16 @@ class ICBPipeline:
         return items
 
     def hierarchy_data(self, month_filter=None, start_date=None, end_date=None):
-        """Retourne la hierarchie CC Project -> Consultants en dict serialisable."""
+        """Returns the CC Project -> Consultants hierarchy as a serializable dict.
+
+        Uses a UNION strategy: all ICB expenditure items are kept, and
+        forecast-only entries (consultant present in forecast but missing
+        from ICB) are injected as additional rows so nothing is lost.
+        Each consultant entry carries a 'source' field:
+          - 'both'          : present in ICB and forecast
+          - 'icb_only'      : present in ICB but no matching forecast entry
+          - 'forecast_only' : present in forecast but missing from ICB
+        """
         items = self._get_items(month_filter, start_date, end_date)
         hierarchy = OrderedDict()
 
@@ -739,6 +748,7 @@ class ICBPipeline:
                     "forecast_working_days": 0.0,
                     "forecast_bill_amount": 0.0,
                     "forecast_ncr": 0.0,
+                    "source": "icb_only",  # will be upgraded to "both" if forecast match found
                 }
 
             cons = cc_data["consultants"][emp]
@@ -746,7 +756,7 @@ class ICBPipeline:
             cons["working_days"] += (item.quantity or 0) / 8.0
             cons["total_bill_amount"] += item.bill_amount or 0
             cons["total_raw_cost"] += item.raw_cost or 0
-            # Un consultant est en anomalie si au moins une de ses lignes l'est
+            # A consultant is flagged as anomalous if at least one of their lines is
             if item.has_anomaly:
                 cons["has_anomaly"] = True
 
@@ -754,8 +764,7 @@ class ICBPipeline:
             cc_data["totals"]["raw_cost"] += item.raw_cost or 0
             cc_data["totals"]["bill_amount"] += item.bill_amount or 0
 
-        # Integration des donnees Forecast
-        # Determiner les mois actifs pour le forecast
+        # Determine active months for forecast enrichment
         active_months = []
         if month_filter:
             active_months = [month_filter]
@@ -765,33 +774,59 @@ class ICBPipeline:
                 end = datetime.strptime(end_date, "%Y-%m-%d").date()
                 for m in self.available_months:
                     m_date = datetime.strptime(m + "-01", "%Y-%m-%d").date()
-                    if start <= m_date <= end: # Approximation simple
+                    if start <= m_date <= end:
                         active_months.append(m)
             else:
                 active_months = self.available_months
 
+        # Also collect all months present in forecast_data for the UNION
+        # (covers months that exist in forecast but not in ICB)
+        forecast_months_set = set()
+        for fk in self.forecast_data:
+            forecast_months_set.add(fk[2])
+        if month_filter:
+            forecast_active = [month_filter] if month_filter in forecast_months_set else []
+        elif start_date and end_date:
+            s = datetime.strptime(start_date, "%Y-%m-%d").date()
+            e = datetime.strptime(end_date, "%Y-%m-%d").date()
+            forecast_active = []
+            for m in sorted(forecast_months_set):
+                try:
+                    m_date = datetime.strptime(m + "-01", "%Y-%m-%d").date()
+                    if s <= m_date <= e:
+                        forecast_active.append(m)
+                except ValueError:
+                    pass
+        else:
+            forecast_active = sorted(forecast_months_set)
+
+        # Merge: use the broadest set of months for enrichment
+        all_active_months = sorted(set(active_months) | set(forecast_active))
+
+        # Enrich existing ICB consultants with forecast data
         for cc_proj, cc_data in hierarchy.items():
             for emp, cons in cc_data["consultants"].items():
                 norm_proj = ExpenditureItem._normalize_key(cc_proj)
                 norm_emp = str(emp).strip().replace("6427_", "")
-                
+
                 sum_frc = 0.0
                 sum_prod = 0.0
                 sum_cost = 0.0
                 frc_count = 0
-                for m in active_months:
+                has_forecast = False
+                for m in all_active_months:
                     key = (norm_proj, norm_emp, m)
                     if key in self.forecast_data:
+                        has_forecast = True
                         fd = self.forecast_data[key]
                         sum_frc += fd["ncr"]
                         sum_prod += fd["working_days"]
                         sum_cost += fd["bill_amount"]
                         if fd["ncr"] != 0:
                             frc_count += 1
-                
+
                 cons["forecast_working_days"] = sum_prod
                 cons["forecast_bill_amount"] = sum_cost
-                # NCR Forecast = moyenne des F.RC non nulles, ou calcul dérivé
                 if frc_count > 0:
                     cons["forecast_ncr"] = sum_frc / frc_count
                 elif sum_prod > 0:
@@ -799,10 +834,15 @@ class ICBPipeline:
                 else:
                     cons["forecast_ncr"] = 0.0
 
+                # Update source indicator
+                if has_forecast:
+                    cons["source"] = "both"
+                # else stays "icb_only"
+
                 cc_data["totals"]["forecast_working_days"] += cons["forecast_working_days"]
                 cc_data["totals"]["forecast_bill_amount"] += cons["forecast_bill_amount"]
-            
-            # Calcul du NCR global pour le projet (informatif, moyenne simple)
+
+            # Average NCR for the project (informational)
             num_cons = len(cc_data["consultants"])
             if num_cons > 0:
                 cc_data["totals"]["ncr"] = sum(c["ncr"] for c in cc_data["consultants"].values()) / num_cons
@@ -811,7 +851,99 @@ class ICBPipeline:
                 cc_data["totals"]["ncr"] = 0.0
                 cc_data["totals"]["forecast_ncr"] = 0.0
 
-        # tri et serialisation
+        # ---------------------------------------------------------------
+        # UNION STEP: inject forecast-only consultants into the hierarchy
+        # These are entries in forecast_data whose (project, consultant)
+        # combination has no corresponding ICB expenditure items.
+        # ---------------------------------------------------------------
+        if self.forecast_data:
+            # Build a set of (norm_proj, norm_emp) already in hierarchy
+            icb_keys = set()
+            for cc_proj, cc_data in hierarchy.items():
+                norm_proj = ExpenditureItem._normalize_key(cc_proj)
+                for emp in cc_data["consultants"]:
+                    norm_emp = str(emp).strip().replace("6427_", "")
+                    icb_keys.add((norm_proj, norm_emp))
+
+            # Collect forecast-only entries grouped by (project, consultant)
+            forecast_only = {}  # (norm_proj, norm_emp) -> list of (month, fd)
+            for fk, fd in self.forecast_data.items():
+                f_proj, f_emp, f_month = fk
+                if f_month not in all_active_months:
+                    continue
+                if (f_proj, f_emp) not in icb_keys:
+                    forecast_only.setdefault((f_proj, f_emp), []).append((f_month, fd))
+
+            for (f_proj, f_emp), month_entries in forecast_only.items():
+                # Find or create the project node in hierarchy
+                # We need the original cc_proj key; try to find a match
+                target_cc = None
+                for cc_proj in hierarchy:
+                    if ExpenditureItem._normalize_key(cc_proj) == f_proj:
+                        target_cc = cc_proj
+                        break
+
+                if target_cc is None:
+                    # Project exists only in forecast — create a new project node
+                    target_cc = f_proj
+                    hierarchy[target_cc] = {
+                        "project_name": "",  # unknown from forecast
+                        "consultants": OrderedDict(),
+                        "totals": {
+                            "working_days": 0.0, "raw_cost": 0.0, "bill_amount": 0.0,
+                            "forecast_working_days": 0.0, "forecast_bill_amount": 0.0,
+                            "forecast_ncr": 0.0, "ncr": 0.0
+                        },
+                    }
+
+                cc_data = hierarchy[target_cc]
+
+                # Aggregate forecast values for this consultant
+                sum_frc = 0.0
+                sum_prod = 0.0
+                sum_cost = 0.0
+                frc_count = 0
+                for _m, fd in month_entries:
+                    sum_frc += fd["ncr"]
+                    sum_prod += fd["working_days"]
+                    sum_cost += fd["bill_amount"]
+                    if fd["ncr"] != 0:
+                        frc_count += 1
+
+                fc_ncr = 0.0
+                if frc_count > 0:
+                    fc_ncr = sum_frc / frc_count
+                elif sum_prod > 0:
+                    fc_ncr = (sum_cost / sum_prod) * 8.0
+
+                # Resolve consultant name from forecast_names
+                emp_name = self.forecast_names.get((f_proj, f_emp), "")
+
+                cc_data["consultants"][f_emp] = {
+                    "name": emp_name,
+                    "grade": "",
+                    "ncr": 0.0,
+                    "working_days": 0.0,
+                    "total_bill_amount": 0.0,
+                    "total_raw_cost": 0.0,
+                    "has_anomaly": False,
+                    "forecast_working_days": sum_prod,
+                    "forecast_bill_amount": sum_cost,
+                    "forecast_ncr": fc_ncr,
+                    "source": "forecast_only",
+                }
+
+                cc_data["totals"]["forecast_working_days"] += sum_prod
+                cc_data["totals"]["forecast_bill_amount"] += sum_cost
+
+            # Recompute average NCR for projects that received forecast-only consultants
+            for cc_proj, cc_data in hierarchy.items():
+                num_cons = len(cc_data["consultants"])
+                if num_cons > 0:
+                    cc_data["totals"]["ncr"] = sum(c["ncr"] for c in cc_data["consultants"].values()) / num_cons
+                    cc_data["totals"]["forecast_ncr"] = sum(c["forecast_ncr"] for c in cc_data["consultants"].values()) / num_cons
+
+        # Sort and serialize
         result = []
         for cc_proj in sorted(hierarchy.keys()):
             cc = hierarchy[cc_proj]
@@ -829,6 +961,7 @@ class ICBPipeline:
                     "forecast_ncr": round(cons["forecast_ncr"], 2),
                     "forecast_working_days": round(cons["forecast_working_days"], 2),
                     "forecast_bill_amount": round(cons["forecast_bill_amount"], 2),
+                    "source": cons.get("source", "both"),
                 })
             result.append({
                 "cc_project_number": cc_proj,
@@ -860,7 +993,7 @@ class ICBPipeline:
             })
         return result
 
-    def export_to_excel(self, month_filter, start_date, end_date, gap_tolerance=2.0):
+    def export_to_excel(self, month_filter, start_date, end_date, gap_tolerance=2.0, include_comments=True):
         import io
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -892,7 +1025,7 @@ class ICBPipeline:
 
                 data = self.hierarchy_data(month_filter=month, start_date=start_date, end_date=end_date)
 
-                # Nouvel ordre des headers
+                # Column headers — "Generated comment" is optional
                 headers = [
                     "EM_Lead", 
                     "Project Name", 
@@ -903,8 +1036,10 @@ class ICBPipeline:
                     "Gap", 
                     "Raw Cost", 
                     "Issue Type", 
-                    "Generated comment"
                 ]
+                if include_comments:
+                    headers.append("Generated comment")
+                num_cols = len(headers)
                 ws.append(headers)
 
                 current_row = 2
@@ -921,12 +1056,12 @@ class ICBPipeline:
 
                     forecast_cell_value = round(forecast_ba_total, 2) if has_any_forecast else ""
 
-                    # --- Col 10 : Generated comment ---
+                    # --- Generated comment (English templates) ---
                     comment = ""
                     icb_ba = cc['totals']['bill_amount']
                     gap_val = round(icb_ba - forecast_ba_total, 2) if has_any_forecast else 0
 
-                    if has_any_forecast and abs(gap_val) > gap_tolerance:
+                    if include_comments and has_any_forecast and abs(gap_val) > gap_tolerance:
                         icb_emps = {}
                         for cons in cc['consultants']:
                             ne = str(cons['employee_id']).strip().replace("6427_", "")
@@ -944,34 +1079,34 @@ class ICBPipeline:
                             if len(entries) <= max_show:
                                 return ", ".join(entries)
                             shown = ", ".join(entries[:max_show])
-                            return f"{shown} ... et {len(entries) - max_show} autre(s)"
+                            return f"{shown} ... and {len(entries) - max_show} other(s)"
 
                         details_wd = []
                         details_ncr = []
                         details_ba = []
-                        
+
                         for ne in sorted(icb_emps.keys()):
                             cons = icb_emps[ne]
                             fk = (norm_proj, ne, month)
                             fd = self.forecast_data.get(fk)
                             if not fd:
                                 continue
-                                
+
                             label = _id_name(ne)
-                            
-                            # Comparaison WD : egalite stricte
+
+                            # Working days comparison: strict equality
                             wd_icb = round(cons['working_days'], 2)
                             wd_fc = round(fd['working_days'], 2)
                             if wd_icb and wd_fc and wd_icb != wd_fc:
-                                details_wd.append(f"{label} ICB={wd_icb}j/Forecast={wd_fc}j")
-                            
-                            # Comparaison NCR : utilise la tolerance dynamique
+                                details_wd.append(f"{label} ICB={wd_icb}d/Forecast={wd_fc}d")
+
+                            # NCR comparison: uses dynamic tolerance
                             ncr_icb = round(cons['ncr'], 2)
                             ncr_fc = round(fd['ncr'], 2)
                             if ncr_icb and ncr_fc and abs(ncr_icb - ncr_fc) > gap_tolerance:
                                 details_ncr.append(f"{label} ICB={ncr_icb}/Forecast={ncr_fc}")
 
-                            # Comparaison Cost
+                            # Cost comparison
                             ba_icb = round(cons['total_bill_amount'], 2)
                             ba_fc = round(fd['bill_amount'], 2)
                             if abs(ba_icb - ba_fc) > gap_tolerance:
@@ -980,21 +1115,21 @@ class ICBPipeline:
                         parts = []
 
                         if details_wd:
-                            parts.append(f"Ecart lie aux jours travailles : {_limit_list(details_wd)}")
+                            parts.append(f"Gap due to working days: {_limit_list(details_wd)}")
                         if details_ncr:
-                            parts.append(f"Ecart lie au taux (NCR) : {_limit_list(details_ncr)}")
+                            parts.append(f"Gap due to rate (NCR): {_limit_list(details_ncr)}")
 
                         if not parts:
                             if details_ba:
                                 details_ba.sort(key=lambda x: x[0], reverse=True)
                                 entries = [f"{x[1]} ICB={x[2]}/Forecast={x[3]}" for x in details_ba]
-                                parts.append(f"Probleme avec Cost : {_limit_list(entries)}")
+                                parts.append(f"Cost issue: {_limit_list(entries)}")
                             else:
-                                parts.append("Probleme avec Cost (a verifier manuellement)")
+                                parts.append("Cost issue (requires manual verification)")
 
                         comment = "\n".join(parts)
 
-                    ws.append([
+                    row_data = [
                         "", # 1. EM_Lead
                         cc['project_name'] or "", # 2. Project Name
                         cc['cc_project_number'], # 3. CC Project Number
@@ -1004,29 +1139,31 @@ class ICBPipeline:
                         f"=E{current_row}-F{current_row}", # 7. Gap (signed, no abs)
                         cc['totals']['raw_cost'], # 8. Raw Cost
                         "", # 9. Issue Type
-                        comment # 10. Generated comment
-                    ])
-                    
-                    # Alignement
-                    for col in range(1, 11):
+                    ]
+                    if include_comments:
+                        row_data.append(comment) # 10. Generated comment
+                    ws.append(row_data)
+
+                    # Alignment
+                    for col in range(1, num_cols + 1):
                         cell = ws.cell(row=current_row, column=col)
                         if col in [4, 5, 6, 7, 8]:
                             cell.alignment = right_align
-                        elif col == 10:
+                        elif include_comments and col == num_cols:
                             cell.alignment = wrap_align
-                            
+
                     current_row += 1
 
-                # Definir le tableau Excel
+                # Define the Excel table
                 if current_row > 2:
-                    table_ref = f"A1:{get_column_letter(10)}{current_row - 1}"
+                    table_ref = f"A1:{get_column_letter(num_cols)}{current_row - 1}"
                     tab = Table(displayName=f"Table_{month.replace('-', '_')}", ref=table_ref)
                     style = TableStyleInfo(name="TableStyleMedium9", showFirstColumn=False,
                                            showLastColumn=False, showRowStripes=True, showColumnStripes=False)
                     tab.tableStyleInfo = style
                     ws.add_table(tab)
 
-                # Ajustement de la largeur des colonnes
+                # Column width adjustments
                 ws.column_dimensions['A'].width = 25 # EM_Lead
                 ws.column_dimensions['B'].width = 40 # Project Name
                 ws.column_dimensions['C'].width = 25 # CC Project Number
@@ -1036,7 +1173,8 @@ class ICBPipeline:
                 ws.column_dimensions['G'].width = 15 # Gap
                 ws.column_dimensions['H'].width = 15 # Raw Cost
                 ws.column_dimensions['I'].width = 25 # Issue Type
-                ws.column_dimensions['J'].width = 60 # Generated comment
+                if include_comments:
+                    ws.column_dimensions['J'].width = 60 # Generated comment
 
             # =================================================================
             # FEUILLE KPI DASHBOARD
@@ -1692,8 +1830,11 @@ def export_excel():
     except ValueError:
         gap_tolerance = 2.0
     
+    # Whether to include the "Generated comment" column
+    include_comments = request.args.get("include_comments", "1") in ("1", "true", "yes")
+    
     try:
-        buffer = pipeline.export_to_excel(month_filter=month, start_date=start_date, end_date=end_date, gap_tolerance=gap_tolerance)
+        buffer = pipeline.export_to_excel(month_filter=month, start_date=start_date, end_date=end_date, gap_tolerance=gap_tolerance, include_comments=include_comments)
         
         import os
         if start_date and end_date:

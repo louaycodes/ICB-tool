@@ -19,7 +19,7 @@
         <button class="btn btn--upload" id="btn-upload" onclick="document.getElementById('file-input').click()">
             Charger un fichier ICB
         </button>
-        <button class="btn btn--export" id="btn-export" onclick="submitExport()" style="display:none;">
+        <button class="btn btn--export" id="btn-export" onclick="showExportModal()" style="display:none;">
             Exporter (Excel)
         </button>
         <button class="btn btn--upload" id="btn-upload-forecast" onclick="document.getElementById('forecast-input').click()" style="display:none; background-color: var(--color-accent-light);">
@@ -103,6 +103,23 @@
 
 
     </main>
+
+    <!-- Export Modal -->
+    <div class="modal-overlay" id="export-modal" style="display:none;">
+        <div class="modal-box">
+            <div class="modal-header">Export to Excel</div>
+            <div class="modal-body">
+                <label class="modal-checkbox-label">
+                    <input type="checkbox" id="export-include-comments" checked>
+                    <span>Include "Generated comment" column</span>
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn--close" onclick="closeExportModal()">Cancel</button>
+                <button class="btn btn--export" onclick="submitExport()">Export</button>
+            </div>
+        </div>
+    </div>
 
 <script>
 /* =====================================================================
@@ -376,8 +393,15 @@ function renderHierarchy(ccProjects) {
             const consCostGapVal = (cons.forecast_working_days > 0) ? (cons.total_bill_amount - cons.forecast_bill_amount) : null;
             // Raw cost error: raw_cost != 0.75 * cost ICB
             const consRawCostErr = (cons.total_bill_amount != null && cons.total_raw_cost != null && cons.total_bill_amount !== 0) ? Math.abs(cons.total_raw_cost - 0.75 * cons.total_bill_amount) > 0.01 : false;
+            // Source badge (ICB only / Forecast only)
+            let sourceBadge = '';
+            if (cons.source === 'icb_only') {
+                sourceBadge = '<span class="source-badge badge-icb" title="Present in ICB only — no matching Forecast entry">ICB</span>';
+            } else if (cons.source === 'forecast_only') {
+                sourceBadge = '<span class="source-badge badge-fc" title="Present in Forecast only — no matching ICB entry">FC</span>';
+            }
             consRow.innerHTML =
-                '<td class="label-indent-1"></td>' +
+                '<td class="label-indent-1">' + sourceBadge + '</td>' +
                 '<td>' + esc(cons.employee_id) + '</td>' +
                 '<td>' + esc(cons.name) + '</td>' +
                 '<td>' + esc(cons.grade) + '</td>' +
@@ -582,8 +606,17 @@ function esc(val) {
     return d.innerHTML;
 }
 
-// -- Export --
+// -- Export Modal --
+function showExportModal() {
+    document.getElementById('export-modal').style.display = 'flex';
+}
+
+function closeExportModal() {
+    document.getElementById('export-modal').style.display = 'none';
+}
+
 function submitExport() {
+    closeExportModal();
     let url = "/api/export?";
     if (currentMonth) url += `month=${currentMonth}&`;
     if (globalStart) url += `start_date=${globalStart}&`;
@@ -591,6 +624,9 @@ function submitExport() {
     
     const gapTol = document.getElementById("gap-tolerance-input").value;
     if (gapTol) url += `gap_tolerance=${gapTol}&`;
+    
+    const includeComments = document.getElementById('export-include-comments').checked;
+    url += `include_comments=${includeComments ? '1' : '0'}&`;
     
     fetch(url)
         .then(res => res.json())
