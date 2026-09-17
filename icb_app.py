@@ -949,6 +949,8 @@ class ICBPipeline:
             cc = hierarchy[cc_proj]
             consultants_list = []
             for emp_id, cons in cc["consultants"].items():
+                if cons["working_days"] == 0 and cons["ncr"] == 0 and cons["forecast_working_days"] == 0 and cons["forecast_ncr"] == 0:
+                    continue
                 consultants_list.append({
                     "employee_id": emp_id,
                     "name": cons["name"],
@@ -1076,10 +1078,11 @@ class ICBPipeline:
                             return ne
 
                         def _limit_list(entries, max_show=5):
-                            if len(entries) <= max_show:
-                                return ", ".join(entries)
-                            shown = ", ".join(entries[:max_show])
-                            return f"{shown} ... and {len(entries) - max_show} other(s)"
+                            formatted_entries = [f"  - {e}" for e in entries]
+                            if len(formatted_entries) <= max_show:
+                                return "\n".join(formatted_entries)
+                            shown = "\n".join(formatted_entries[:max_show])
+                            return f"{shown}\n  - ... and {len(entries) - max_show} other(s)"
 
                         details_wd = []
                         details_ncr = []
@@ -1115,19 +1118,19 @@ class ICBPipeline:
                         parts = []
 
                         if details_wd:
-                            parts.append(f"Gap due to working days: {_limit_list(details_wd)}")
+                            parts.append(f"Gap due to working days:\n{_limit_list(details_wd)}")
                         if details_ncr:
-                            parts.append(f"Gap due to rate (NCR): {_limit_list(details_ncr)}")
+                            parts.append(f"Gap due to rate (NCR):\n{_limit_list(details_ncr)}")
 
                         if not parts:
                             if details_ba:
                                 details_ba.sort(key=lambda x: x[0], reverse=True)
                                 entries = [f"{x[1]} ICB={x[2]}/Forecast={x[3]}" for x in details_ba]
-                                parts.append(f"Cost issue: {_limit_list(entries)}")
+                                parts.append(f"Cost issue:\n{_limit_list(entries)}")
                             else:
                                 parts.append("Cost issue (requires manual verification)")
 
-                        comment = "\n".join(parts)
+                        comment = "\n\n".join(parts)
 
                     row_data = [
                         "", # 1. EM_Lead
