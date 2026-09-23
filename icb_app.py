@@ -1177,12 +1177,9 @@ class ICBPipeline:
                                 return f"{ne} ({name})"
                             return ne
 
-                        def _limit_list(entries, max_show=5):
+                        def _limit_list(entries):
                             formatted_entries = [f"  - {e}" for e in entries]
-                            if len(formatted_entries) <= max_show:
-                                return "\n".join(formatted_entries)
-                            shown = "\n".join(formatted_entries[:max_show])
-                            return f"{shown}\n  - ... and {len(entries) - max_show} other(s)"
+                            return "\n".join(formatted_entries)
 
                         details_wd = []
                         details_ncr = []
