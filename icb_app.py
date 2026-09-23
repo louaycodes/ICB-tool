@@ -704,7 +704,8 @@ class ICBPipeline:
                     prod = _to_float(_safe(block['prod']))
                     cost = _to_float(_safe(block['cost']))
 
-                    if frc != 0 or prod != 0 or cost != 0:
+                    # Ignorer si toutes les valeurs sont a 0 ou vides
+                    if abs(frc) > 1e-6 or abs(prod) > 1e-6 or abs(cost) > 1e-6:
                         self.forecast_data[
                             (norm_proj, norm_icb_id, month_key)
                         ] = {
@@ -976,9 +977,28 @@ class ICBPipeline:
                 if f_month not in all_active_months:
                     continue
                 if (f_proj, f_emp) not in icb_keys:
+                    # Ignorer les entrees dont les valeurs de travail/cout sont a 0 / vides
+                    if abs(fd.get("working_days", 0)) < 1e-6 and abs(fd.get("bill_amount", 0)) < 1e-6:
+                        continue
                     forecast_only.setdefault((f_proj, f_emp), []).append((f_month, fd))
 
             for (f_proj, f_emp), month_entries in forecast_only.items():
+                # Aggregate forecast values for this consultant
+                sum_frc = 0.0
+                sum_prod = 0.0
+                sum_cost = 0.0
+                frc_count = 0
+                for _m, fd in month_entries:
+                    sum_frc += fd["ncr"]
+                    sum_prod += fd["working_days"]
+                    sum_cost += fd["bill_amount"]
+                    if fd["ncr"] != 0:
+                        frc_count += 1
+
+                # Ne pas injecter si toutes les valeurs d'activite sont nulles
+                if abs(sum_prod) < 1e-6 and abs(sum_cost) < 1e-6:
+                    continue
+
                 # Find or create the project node in hierarchy
                 # We need the original cc_proj key; try to find a match
                 target_cc = None
@@ -1001,18 +1021,6 @@ class ICBPipeline:
                     }
 
                 cc_data = hierarchy[target_cc]
-
-                # Aggregate forecast values for this consultant
-                sum_frc = 0.0
-                sum_prod = 0.0
-                sum_cost = 0.0
-                frc_count = 0
-                for _m, fd in month_entries:
-                    sum_frc += fd["ncr"]
-                    sum_prod += fd["working_days"]
-                    sum_cost += fd["bill_amount"]
-                    if fd["ncr"] != 0:
-                        frc_count += 1
 
                 fc_ncr = 0.0
                 if frc_count > 0:
@@ -1040,12 +1048,17 @@ class ICBPipeline:
                 cc_data["totals"]["forecast_working_days"] += sum_prod
                 cc_data["totals"]["forecast_bill_amount"] += sum_cost
 
-            # Recompute average NCR for projects that received forecast-only consultants
+            # Recompute average NCR for projects (uniquement sur les consultants actifs)
             for cc_proj, cc_data in hierarchy.items():
-                num_cons = len(cc_data["consultants"])
+                active_cons = [c for c in cc_data["consultants"].values()
+                               if not (c["working_days"] == 0 and c["total_bill_amount"] == 0 and c["forecast_working_days"] == 0 and c["forecast_bill_amount"] == 0)]
+                num_cons = len(active_cons)
                 if num_cons > 0:
-                    cc_data["totals"]["ncr"] = sum(c["ncr"] for c in cc_data["consultants"].values()) / num_cons
-                    cc_data["totals"]["forecast_ncr"] = sum(c["forecast_ncr"] for c in cc_data["consultants"].values()) / num_cons
+                    cc_data["totals"]["ncr"] = sum(c["ncr"] for c in active_cons) / num_cons
+                    cc_data["totals"]["forecast_ncr"] = sum(c["forecast_ncr"] for c in active_cons) / num_cons
+                else:
+                    cc_data["totals"]["ncr"] = 0.0
+                    cc_data["totals"]["forecast_ncr"] = 0.0
 
         # Sort and serialize
         result = []
@@ -1053,7 +1066,7 @@ class ICBPipeline:
             cc = hierarchy[cc_proj]
             consultants_list = []
             for emp_id, cons in cc["consultants"].items():
-                if cons["working_days"] == 0 and cons["ncr"] == 0 and cons["forecast_working_days"] == 0 and cons["forecast_ncr"] == 0:
+                if cons["working_days"] == 0 and cons["total_bill_amount"] == 0 and cons["forecast_working_days"] == 0 and cons["forecast_bill_amount"] == 0:
                     continue
                 consultants_list.append({
                     "employee_id": emp_id,
@@ -1069,6 +1082,11 @@ class ICBPipeline:
                     "forecast_bill_amount": round(cons["forecast_bill_amount"], 2),
                     "source": cons.get("source", "both"),
                 })
+
+            # Si le projet n'a aucun consultant actif et aucune depense ni forecast, ne pas l'afficher
+            if not consultants_list and cc["totals"]["working_days"] == 0 and cc["totals"]["bill_amount"] == 0 and cc["totals"]["forecast_bill_amount"] == 0:
+                continue
+
             result.append({
                 "cc_project_number": cc_proj,
                 "project_name": cc["project_name"],
@@ -1157,8 +1175,9 @@ class ICBPipeline:
                     forecast_ba_total = 0.0
                     for fk, fd in self.forecast_data.items():
                         if fk[0] == norm_proj and fk[2] == month:
-                            has_any_forecast = True
-                            forecast_ba_total += fd["bill_amount"]
+                            if abs(fd.get("working_days", 0)) > 1e-6 or abs(fd.get("bill_amount", 0)) > 1e-6:
+                                has_any_forecast = True
+                                forecast_ba_total += fd["bill_amount"]
 
                     forecast_cell_value = round(forecast_ba_total, 2) if has_any_forecast else ""
 
@@ -1410,8 +1429,9 @@ class ICBPipeline:
                 has_fc = False
                 for fk, fd in self.forecast_data.items():
                     if fk[0] == norm_proj and fk[2] == month:
-                        has_fc = True
-                        fc_total += fd["bill_amount"]
+                        if abs(fd.get("working_days", 0)) > 1e-6 or abs(fd.get("bill_amount", 0)) > 1e-6:
+                            has_fc = True
+                            fc_total += fd["bill_amount"]
 
                 m_cost += cc['totals']['bill_amount']
                 m_forecast += fc_total if has_fc else 0
