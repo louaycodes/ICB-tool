@@ -1133,8 +1133,8 @@ class ICBPipeline:
                     "Project Name", 
                     "CC Project Number", 
                     "Working Days", 
-                    "Cost", 
-                    "Forecast bill amount", 
+                    "ICB Transfer Price", 
+                    "Forecast Transfer Price", 
                     "Gap", 
                     "Raw Cost", 
                     "Issue Type", 
@@ -1234,8 +1234,8 @@ class ICBPipeline:
                         cc['project_name'] or "", # 2. Project Name
                         cc['cc_project_number'], # 3. CC Project Number
                         cc['totals']['working_days'], # 4. Working Days
-                        cc['totals']['bill_amount'], # 5. Cost
-                        forecast_cell_value, # 6. Forecast bill amount
+                        cc['totals']['bill_amount'], # 5. ICB Transfer Price
+                        forecast_cell_value, # 6. Forecast Transfer Price
                         f"=E{current_row}-F{current_row}", # 7. Gap (signed, no abs)
                         cc['totals']['raw_cost'], # 8. Raw Cost
                         "", # 9. Issue Type
@@ -1281,8 +1281,8 @@ class ICBPipeline:
                 ws.column_dimensions['B'].width = 40 # Project Name
                 ws.column_dimensions['C'].width = 25 # CC Project Number
                 ws.column_dimensions['D'].width = 15 # Working Days
-                ws.column_dimensions['E'].width = 15 # Cost
-                ws.column_dimensions['F'].width = 20 # Forecast bill amount
+                ws.column_dimensions['E'].width = 20 # ICB Transfer Price
+                ws.column_dimensions['F'].width = 22 # Forecast Transfer Price
                 ws.column_dimensions['G'].width = 15 # Gap
                 ws.column_dimensions['H'].width = 15 # Raw Cost
                 ws.column_dimensions['I'].width = 25 # Issue Type
@@ -1485,7 +1485,7 @@ class ICBPipeline:
         # ================================================================
         _write_section_title(ws, row, "1. SYNTHESE MENSUELLE", 8)
         row += 1
-        headers_s1 = ["Mois", "Cost ICB", "Forecast", "Gap (Cost-Forecast)",
+        headers_s1 = ["Mois", "ICB Transfer Price", "Forecast Transfer Price", "Gap (ICB-Forecast)",
                        "Working Days", "Raw Cost", "Nb Projets", "Nb Consultants"]
         for c, h in enumerate(headers_s1, 1):
             ws.cell(row=row, column=c, value=h)
@@ -1545,13 +1545,13 @@ class ICBPipeline:
         row += 2
 
         # ================================================================
-        # SECTION 2 : BILL AMOUNT CUMULE PAR MOIS
+        # SECTION 2 : TRANSFER PRICE CUMULE PAR MOIS
         # ================================================================
-        _write_section_title(ws, row, "2. BILL AMOUNT CUMULE PAR MOIS (Progression)", 8)
+        _write_section_title(ws, row, "2. TRANSFER PRICE CUMULE PAR MOIS (Progression)", 8)
         row += 1
-        headers_s2 = ["Mois", "Cost ICB du Mois", "Cost ICB Cumule",
-                       "Forecast du Mois", "Forecast Cumule",
-                       "Gap Cumule", "% Progression Cost"]
+        headers_s2 = ["Mois", "ICB TP du Mois", "ICB TP Cumule",
+                       "Forecast TP du Mois", "Forecast TP Cumule",
+                       "Gap Cumule", "% Progression TP"]
         for c, h in enumerate(headers_s2, 1):
             ws.cell(row=row, column=c, value=h)
         _style_header_row(ws, row, 1, len(headers_s2))
@@ -1598,8 +1598,8 @@ class ICBPipeline:
         # ================================================================
         _write_section_title(ws, row, "3. SYNTHESE PAR PROJET (toutes periodes)", 9)
         row += 1
-        headers_s3 = ["CC Project Number", "Project Name", "Cost ICB Total",
-                       "Forecast Total", "Gap", "Gap %",
+        headers_s3 = ["CC Project Number", "Project Name", "ICB TP Total",
+                       "Forecast TP Total", "Gap", "Gap %",
                        "Working Days", "NCR Moyen", "Nb Consultants"]
         for c, h in enumerate(headers_s3, 1):
             ws.cell(row=row, column=c, value=h)
@@ -1651,11 +1651,11 @@ class ICBPipeline:
         # ================================================================
         # SECTION 4 : TOP CONSULTANTS PAR COST
         # ================================================================
-        _write_section_title(ws, row, "4. TOP CONSULTANTS PAR COST (toutes periodes)", 8)
+        _write_section_title(ws, row, "4. TOP CONSULTANTS PAR TRANSFER PRICE (toutes periodes)", 8)
         row += 1
         headers_s4 = ["Employee ID", "Nom", "Projet Principal",
-                       "Cost ICB Total", "Working Days Total",
-                       "NCR", "Nb Mois Actifs", "Cost Moyen / Mois"]
+                       "ICB TP Total", "Working Days Total",
+                       "NCR", "Nb Mois Actifs", "TP Moyen / Mois"]
         for c, h in enumerate(headers_s4, 1):
             ws.cell(row=row, column=c, value=h)
         _style_header_row(ws, row, 1, len(headers_s4))
@@ -1715,7 +1715,7 @@ class ICBPipeline:
         # SECTION 5 : DETAIL CONSULTANT PAR MOIS
         # ================================================================
         _write_section_title(ws, row,
-                             "5. DETAIL CONSULTANT PAR MOIS (Cost par consultant par mois)",
+                             "5. DETAIL CONSULTANT PAR MOIS (TP par consultant par mois)",
                              3 + len(months_in_range))
         row += 1
 

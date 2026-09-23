@@ -83,7 +83,7 @@
                             <th rowspan="2" class="col-group-right">Grade</th>
                             <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">NCR</th>
                             <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Working Days</th>
-                            <th colspan="3" class="num" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Cost</th>
+                            <th colspan="3" class="num" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Transfer Price</th>
                         </tr>
                         <tr class="sub-header-row">
                             <th class="num sub-header col-sep">ICB</th>
@@ -494,7 +494,7 @@ async function toggleDetail(rowEl) {
     html += '<table class="detail-table"><thead><tr>';
     html += '<th>ID Transaction</th><th>Date</th><th>Type depense</th><th>Facture</th>';
     html += '<th class="num">Working Days</th><th class="num">NCR</th>';
-    html += '<th class="num">Raw Cost</th><th class="num">Cost</th>';
+    html += '<th class="num">Raw Cost</th><th class="num">Transfer Price</th>';
     html += '</tr></thead><tbody>';
     txns.forEach((t, i) => {
         let rowClass = (i % 2 === 0 ? 'even' : 'odd');
