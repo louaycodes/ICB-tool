@@ -360,11 +360,11 @@ function renderHierarchy(ccProjects) {
         ccRow.innerHTML =
             '<td colspan="4"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
             '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
-            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+            '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
             '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
-            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
+            '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
             '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
-            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+            '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
             '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && Math.abs(ccCostGapVal) > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>';
         ccRow.onclick = () => toggleCC(cc.cc_project_number);
         tbody.appendChild(ccRow);
@@ -400,11 +400,11 @@ function renderHierarchy(ccProjects) {
                 '<td>' + esc(cons.name) + '</td>' +
                 '<td>' + esc(cons.grade) + '</td>' +
                 '<td class="num' + (gapNcr ? ' cell-gap' : '') + '">' + fmt(cons.ncr) + '</td>' + // NCR ICB
-                '<td class="num' + (gapNcr ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_ncr) : '') + '</td>' + // NCR FORECAST
                 '<td class="num' + (gapWd ? ' cell-gap' : '') + '">' + fmt(cons.working_days) + '</td>' + // WD ICB
-                '<td class="num' + (gapWd ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_working_days) : '') + '</td>' + // WD FORECAST
+                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_working_days) : '') + '</td>' + // WD FORECAST
                 '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + fmt(cons.total_bill_amount) + '</td>' + // BA ICB
-                '<td class="num' + (gapBa ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
                 '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + (consCostGapVal != null && Math.abs(consCostGapVal) > getGapTolerance() ? fmt(consCostGapVal) : '') + '</td>';
             consRow.dataset.consName = cons.name;
             consRow.onclick = (e) => { e.stopPropagation(); toggleDetail(consRow); };
@@ -421,11 +421,11 @@ function renderHierarchy(ccProjects) {
             '<td class="label-indent-1"></td>' +
             '<td colspan="3">TOTAL ' + esc(cc.cc_project_number) + '</td>' +
             '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
-            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
             '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
-            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
+            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
             '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
-            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
             '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && Math.abs(ccCostGapVal) > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>';
         tbody.appendChild(totRow);
     });
