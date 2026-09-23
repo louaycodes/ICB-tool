@@ -264,7 +264,7 @@ class ICBPipeline:
 
     def load(self, path):
         # Charger la feuille "ICB_DB" avec detection dynamique des en-tetes
-        df_raw = fast_load_excel(path, sheet_name="ICB_DB", dynamic_header=True)
+        df_raw = fast_load_excel(path, sheet_name="DB_ICB", dynamic_header=True)
 
         # --- Detection dynamique de la colonne "Project Transfer Price" ---
         # Accepte aussi "Project Revenue Price" comme nom alternatif
