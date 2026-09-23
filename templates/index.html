@@ -83,8 +83,7 @@
                             <th rowspan="2" class="col-group-right">Grade</th>
                             <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">NCR</th>
                             <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Working Days</th>
-                            <th colspan="3" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Cost</th>
-                            <th rowspan="2" class="num">Raw Cost</th>
+                            <th colspan="3" class="num" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Cost</th>
                         </tr>
                         <tr class="sub-header-row">
                             <th class="num sub-header col-sep">ICB</th>
@@ -93,7 +92,7 @@
                             <th class="num sub-header col-group-right">FORECAST</th>
                             <th class="num sub-header col-sep">ICB</th>
                             <th class="num sub-header col-sep">FORECAST</th>
-                            <th class="num sub-header col-group-right">GAP</th>
+                            <th class="num sub-header">GAP</th>
                         </tr>
                     </thead>
                     <tbody id="table-body"></tbody>
@@ -338,7 +337,7 @@ function renderHierarchy(ccProjects) {
 
     if (!ccProjects || ccProjects.length === 0) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="12" style="text-align:center;padding:32px;color:#718096;">Aucune donnee pour cette periode.</td>';
+        tr.innerHTML = '<td colspan="11" style="text-align:center;padding:32px;color:#718096;">Aucune donnee pour cette periode.</td>';
         tbody.appendChild(tr);
         return;
     }
@@ -358,8 +357,6 @@ function renderHierarchy(ccProjects) {
             : esc(cc.cc_project_number);
         // Compute Cost gap (signed value)
         const ccCostGapVal = (cc.totals.forecast_working_days > 0) ? (cc.totals.bill_amount - cc.totals.forecast_bill_amount) : null;
-        // Raw cost error: raw_cost != 0.75 * cost ICB
-        const ccRawCostErr = (cc.totals.bill_amount != null && cc.totals.raw_cost != null && cc.totals.bill_amount !== 0) ? Math.abs(cc.totals.raw_cost - 0.75 * cc.totals.bill_amount) > 0.01 : false;
         ccRow.innerHTML =
             '<td colspan="4"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
             '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
@@ -368,8 +365,7 @@ function renderHierarchy(ccProjects) {
             '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
             '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
             '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
-            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && Math.abs(ccCostGapVal) > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>' + // COST GAP
-            '<td class="num' + (ccRawCostErr ? ' cell-gap' : '') + '">' + fmt(cc.totals.raw_cost) + '</td>';
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && Math.abs(ccCostGapVal) > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>';
         ccRow.onclick = () => toggleCC(cc.cc_project_number);
         tbody.appendChild(ccRow);
 
@@ -391,8 +387,6 @@ function renderHierarchy(ccProjects) {
             consRow.dataset.projectname = cc.project_name || "";
             // Compute Cost gap per consultant (signed value)
             const consCostGapVal = (cons.forecast_working_days > 0) ? (cons.total_bill_amount - cons.forecast_bill_amount) : null;
-            // Raw cost error: raw_cost != 0.75 * cost ICB
-            const consRawCostErr = (cons.total_bill_amount != null && cons.total_raw_cost != null && cons.total_bill_amount !== 0) ? Math.abs(cons.total_raw_cost - 0.75 * cons.total_bill_amount) > 0.01 : false;
             // Source badge (ICB only / Forecast only)
             let sourceBadge = '';
             if (cons.source === 'icb_only') {
@@ -411,8 +405,7 @@ function renderHierarchy(ccProjects) {
                 '<td class="num' + (gapWd ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_working_days) : '') + '</td>' + // WD FORECAST
                 '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + fmt(cons.total_bill_amount) + '</td>' + // BA ICB
                 '<td class="num' + (gapBa ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
-                '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + (consCostGapVal != null && Math.abs(consCostGapVal) > getGapTolerance() ? fmt(consCostGapVal) : '') + '</td>' + // COST GAP
-                '<td class="num' + (consRawCostErr ? ' cell-gap' : '') + '">' + fmt(cons.total_raw_cost) + '</td>';
+                '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + (consCostGapVal != null && Math.abs(consCostGapVal) > getGapTolerance() ? fmt(consCostGapVal) : '') + '</td>';
             consRow.dataset.consName = cons.name;
             consRow.onclick = (e) => { e.stopPropagation(); toggleDetail(consRow); };
             tbody.appendChild(consRow);
@@ -433,8 +426,7 @@ function renderHierarchy(ccProjects) {
             '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
             '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
             '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
-            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && Math.abs(ccCostGapVal) > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>' + // COST GAP
-            '<td class="num' + (ccRawCostErr ? ' cell-gap' : '') + '">' + fmt(cc.totals.raw_cost) + '</td>';
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && Math.abs(ccCostGapVal) > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>';
         tbody.appendChild(totRow);
     });
 }
@@ -493,7 +485,7 @@ async function toggleDetail(rowEl) {
     detailRow.className = "row-detail-inline";
     detailRow.dataset.cc = ccProject;
     const td = document.createElement("td");
-    td.setAttribute("colspan", "12");
+    td.setAttribute("colspan", "11");
 
     let html = '<div class="inline-detail">';
     html += '<div class="inline-detail__header">';

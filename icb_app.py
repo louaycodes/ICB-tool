@@ -56,17 +56,105 @@ pipeline = None
 # ---------------------------------------------------------------------------
 # Lecture rapide de gros fichiers Excel
 # ---------------------------------------------------------------------------
-def fast_load_excel(path, sheet_name=0):
+def fast_load_excel(path, sheet_name=0, dynamic_header=False):
+    """Charge un fichier Excel en DataFrame.
+
+    Si *dynamic_header* est True, la fonction scanne les 20 premieres lignes
+    pour trouver celle contenant les en-tetes attendus (meme logique que le
+    chargement Forecast). Sinon, la ligne 1 est utilisee comme en-tete.
+
+    Retourne un DataFrame pandas.
+    """
     wb = load_workbook(path, read_only=True, data_only=True)
-    ws = wb[sheet_name] if isinstance(sheet_name, str) else wb.worksheets[sheet_name]
-    header_row = next(ws.iter_rows(min_row=1, max_row=1, min_col=1, max_col=200, values_only=True))
-    ncols = max((i for i, v in enumerate(header_row) if v is not None), default=-1) + 1
-    if ncols == 0:
-        wb.close()
-        raise ValueError("Feuille vide ou en-tete introuvable.")
-    header = list(header_row[:ncols])
-    rows = ws.iter_rows(min_row=2, min_col=1, max_col=ncols, values_only=True)
-    data = [r for r in rows if any(v is not None for v in r)]
+
+    # --- Selection de la feuille ---
+    if isinstance(sheet_name, str):
+        if sheet_name not in wb.sheetnames:
+            available = wb.sheetnames
+            wb.close()
+            raise ValueError(
+                f"Feuille '{sheet_name}' introuvable dans le classeur. "
+                f"Feuilles disponibles : {available}"
+            )
+        ws = wb[sheet_name]
+    else:
+        ws = wb.worksheets[sheet_name]
+
+    SCAN_MAX_COL = 200
+
+    if dynamic_header:
+        # --- Scan dynamique des en-tetes ---
+        # Marqueurs attendus pour identifier la ligne d'en-tetes ICB
+        ICB_HEADER_MARKERS = {
+            'employee number', 'cc project number', 'project name',
+            'expenditure type', 'quantity',
+        }
+
+        header_row_idx = None   # 1-indexed
+        header_cells = {}       # col_0idx -> str value
+        min_data_col = None     # 0-indexed : premiere colonne non-vide
+
+        for r in range(1, min(ws.max_row + 1 if ws.max_row else 2, 21)):
+            row_data = next(ws.iter_rows(min_row=r, max_row=r,
+                                         min_col=1, max_col=SCAN_MAX_COL,
+                                         values_only=True))
+            row_map = {}
+            hits = 0
+            for ci, val in enumerate(row_data):
+                if val is not None and isinstance(val, str) and val.strip():
+                    row_map[ci] = val.strip()
+                    if val.strip().lower() in ICB_HEADER_MARKERS:
+                        hits += 1
+            if hits >= 3:
+                header_row_idx = r
+                header_cells = row_map
+                break
+
+        if header_row_idx is None:
+            wb.close()
+            raise ValueError(
+                "Impossible de trouver la ligne d'en-tetes dans les 20 "
+                "premieres lignes de la feuille. Marqueurs recherches : "
+                + ", ".join(sorted(ICB_HEADER_MARKERS))
+            )
+
+        # Determiner la premiere et la derniere colonne contenant un en-tete
+        col_indices = sorted(header_cells.keys())
+        min_data_col = col_indices[0]       # 0-indexed
+        max_data_col = col_indices[-1]       # 0-indexed
+        ncols = max_data_col - min_data_col + 1
+
+        # Construire le header (peut contenir des None pour des trous)
+        header = []
+        for ci in range(min_data_col, max_data_col + 1):
+            header.append(header_cells.get(ci))
+
+        print(f"[ICB] En-tetes detectes a la ligne {header_row_idx}, "
+              f"colonnes {min_data_col}-{max_data_col} ({ncols} colonnes)")
+
+        # Lire les donnees a partir de la ligne suivante
+        rows_iter = ws.iter_rows(
+            min_row=header_row_idx + 1,
+            min_col=min_data_col + 1,   # 1-indexed pour openpyxl
+            max_col=max_data_col + 1,   # 1-indexed
+            values_only=True,
+        )
+        data = [r for r in rows_iter if any(v is not None for v in r)]
+
+    else:
+        # --- Mode classique : en-tetes en ligne 1, donnees en col A ---
+        header_row = next(ws.iter_rows(min_row=1, max_row=1, min_col=1,
+                                        max_col=SCAN_MAX_COL, values_only=True))
+        ncols = max((i for i, v in enumerate(header_row) if v is not None),
+                    default=-1) + 1
+        if ncols == 0:
+            wb.close()
+            raise ValueError("Feuille vide ou en-tete introuvable.")
+        header = list(header_row[:ncols])
+        rows_iter = ws.iter_rows(min_row=2, min_col=1, max_col=ncols,
+                                  values_only=True)
+        data = [r for r in rows_iter if any(v is not None for v in r)]
+
     wb.close()
     return pd.DataFrame(data, columns=header)
 
@@ -175,9 +263,11 @@ class ICBPipeline:
         self.forecast_names = {}  # (norm_proj, norm_ggid) -> employee_name (from forecast file)
 
     def load(self, path):
-        df_raw = fast_load_excel(path)
+        # Charger la feuille "ICB_DB" avec detection dynamique des en-tetes
+        df_raw = fast_load_excel(path, sheet_name="ICB_DB", dynamic_header=True)
 
         # --- Detection dynamique de la colonne "Project Transfer Price" ---
+        # Accepte aussi "Project Revenue Price" comme nom alternatif
         ptp_col = None
         for col in df_raw.columns:
             if col is not None and str(col).strip().lower() == "project transfer price":
@@ -185,9 +275,19 @@ class ICBPipeline:
                 break
 
         if ptp_col is None:
-            print("[ERROR] Colonne 'Project Transfer Price' introuvable dans le fichier ICB.")
+            # Essayer le nom alternatif
+            for col in df_raw.columns:
+                if col is not None and str(col).strip().lower() == "project revenue price":
+                    ptp_col = col
+                    print(f"[INFO] Colonne alternative '{ptp_col}' detectee "
+                          f"(utilisee a la place de 'Project Transfer Price')")
+                    break
+
+        if ptp_col is None:
+            print("[ERROR] Ni 'Project Transfer Price' ni 'Project Revenue Price' "
+                  "introuvable dans le fichier ICB.")
             print(f"  Colonnes disponibles : {list(df_raw.columns)}")
-        elif ptp_col != "Project Transfer Price":
+        elif str(ptp_col).strip() != "Project Transfer Price":
             # Renommer vers le nom canonique attendu par ExpenditureItem
             df_raw = df_raw.rename(columns={ptp_col: "Project Transfer Price"})
             print(f"[INFO] Colonne '{ptp_col}' renommee en 'Project Transfer Price'")
@@ -1153,7 +1253,20 @@ class ICBPipeline:
                         if col in [4, 5, 6, 7, 8]:
                             cell.alignment = right_align
                         elif include_comments and col == num_cols:
-                            cell.alignment = wrap_align
+                            # Multi-line comment: wrap_text + vertical top
+                            cell.alignment = Alignment(
+                                wrap_text=True,
+                                vertical='top',
+                                horizontal='left',
+                            )
+                            # Calculer la hauteur de ligne necessaire
+                            if comment:
+                                num_lines = comment.count("\n") + 1
+                                needed_height = max(15, num_lines * 15)
+                                current_height = ws.row_dimensions[current_row].height or 15
+                                ws.row_dimensions[current_row].height = max(
+                                    current_height, needed_height
+                                )
 
                     current_row += 1
 
