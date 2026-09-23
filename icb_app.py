@@ -267,25 +267,29 @@ class ICBPipeline:
         df_raw = fast_load_excel(path, sheet_name="DB_ICB", dynamic_header=True)
 
         # --- Detection dynamique de la colonne "Project Transfer Price" ---
-        # Accepte aussi "Project Revenue Price" comme nom alternatif
+        # Accepte 3 variantes ordonnees de noms possibles :
+        candidate_names = [
+            "Project Transfer Price",
+            "Project Revenue Price",
+            "Revenue Project TP",
+        ]
         ptp_col = None
-        for col in df_raw.columns:
-            if col is not None and str(col).strip().lower() == "project transfer price":
-                ptp_col = col
+        for candidate in candidate_names:
+            c_norm = candidate.strip().lower()
+            for col in df_raw.columns:
+                if col is not None and str(col).strip().lower() == c_norm:
+                    ptp_col = col
+                    break
+            if ptp_col is not None:
+                if candidate != candidate_names[0]:
+                    print(f"[INFO] Colonne alternative '{ptp_col}' detectee "
+                          f"(utilisee a la place de '{candidate_names[0]}')")
                 break
 
         if ptp_col is None:
-            # Essayer le nom alternatif
-            for col in df_raw.columns:
-                if col is not None and str(col).strip().lower() == "project revenue price":
-                    ptp_col = col
-                    print(f"[INFO] Colonne alternative '{ptp_col}' detectee "
-                          f"(utilisee a la place de 'Project Transfer Price')")
-                    break
-
-        if ptp_col is None:
-            print("[ERROR] Ni 'Project Transfer Price' ni 'Project Revenue Price' "
-                  "introuvable dans le fichier ICB.")
+            names_str = ", ".join(f"'{name}'" for name in candidate_names)
+            print(f"[ERROR] Aucune des colonnes attendues ({names_str}) "
+                  "n'a ete trouvee dans le fichier ICB.")
             print(f"  Colonnes disponibles : {list(df_raw.columns)}")
         elif str(ptp_col).strip() != "Project Transfer Price":
             # Renommer vers le nom canonique attendu par ExpenditureItem
@@ -1174,8 +1178,11 @@ class ICBPipeline:
                             if not name:
                                 name = self.forecast_names.get((norm_proj, ne))
                             if name:
-                                return f"{ne} ({name})"
-                            return ne
+                                name_str = str(name).strip()
+                                if not (name_str.startswith("(") and name_str.endswith(")")):
+                                    return f"({name_str})"
+                                return name_str
+                            return f"({ne})" if ne else "(Unknown)"
 
                         def _limit_list(entries):
                             formatted_entries = [f"  - {e}" for e in entries]
@@ -1198,13 +1205,13 @@ class ICBPipeline:
                             wd_icb = round(cons['working_days'], 2)
                             wd_fc = round(fd['working_days'], 2)
                             if wd_icb and wd_fc and wd_icb != wd_fc:
-                                details_wd.append(f"{label} ICB={wd_icb} D/Forecast={wd_fc} D")
+                                details_wd.append(f"{label} : ICB = {wd_icb} D / Forecast = {wd_fc} D")
 
                             # NCR comparison: uses dynamic tolerance
                             ncr_icb = round(cons['ncr'], 2)
                             ncr_fc = round(fd['ncr'], 2)
                             if ncr_icb and ncr_fc and abs(ncr_icb - ncr_fc) > gap_tolerance:
-                                details_ncr.append(f"{label} ICB={ncr_icb}/Forecast={ncr_fc}")
+                                details_ncr.append(f"{label} : ICB = {ncr_icb} / Forecast = {ncr_fc}")
 
                             # Cost comparison
                             ba_icb = round(cons['total_bill_amount'], 2)
@@ -1222,7 +1229,7 @@ class ICBPipeline:
                         if not parts:
                             if details_ba:
                                 details_ba.sort(key=lambda x: x[0], reverse=True)
-                                entries = [f"{x[1]} ICB={x[2]}/Forecast={x[3]}" for x in details_ba]
+                                entries = [f"{x[1]} : ICB = {x[2]} / Forecast = {x[3]}" for x in details_ba]
                                 parts.append(f"Cost issue:\n{_limit_list(entries)}")
                             else:
                                 parts.append("Cost issue (requires manual verification)")
