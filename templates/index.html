@@ -19,10 +19,17 @@
         <button class="btn btn--upload" id="btn-upload" onclick="document.getElementById('file-input').click()">
             Charger un fichier ICB
         </button>
-        <button class="btn btn--export" id="btn-export" onclick="submitExport()" style="display:none;">
+        <button class="btn btn--export" id="btn-export" onclick="showExportModal()" style="display:none;">
             Exporter (Excel)
         </button>
+        <button class="btn btn--upload" id="btn-upload-forecast" onclick="document.getElementById('forecast-input').click()" style="display:none; background-color: var(--color-accent-light);">
+            Importer Forecast
+        </button>
+        <button class="btn btn--close" id="btn-reset" onclick="resetApp()" style="display:none;">
+            Décharger
+        </button>
         <input type="file" id="file-input" accept=".xlsx" onchange="uploadFile(this)">
+        <input type="file" id="forecast-input" accept=".xlsx" onchange="uploadForecast(this)" style="display:none;">
         <div class="header__search" id="search-wrapper" style="display:none;">
             <svg class="header__search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="text" class="header__search-input" id="search-input" placeholder="Rechercher (nom, ID, projet...)" oninput="applySearch(this.value)">
@@ -53,6 +60,10 @@
         <div class="global-filters" id="global-filters" style="display:none;">
             <label>Du : <input type="date" id="global-start" onchange="applyGlobalDateFilter()"></label>
             <label>Au : <input type="date" id="global-end" onchange="applyGlobalDateFilter()"></label>
+            <label style="margin-left: 20px;">
+                Tolerance Ecart (Montant/NCR) : 
+                <input type="number" step="0.1" id="gap-tolerance-input" value="2" style="width: 60px;" onchange="updateGapTolerance()">
+            </label>
         </div>
 
         <!-- Month bar (always visible above the table) -->
@@ -72,8 +83,7 @@
                             <th rowspan="2" class="col-group-right">Grade</th>
                             <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">NCR</th>
                             <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Working Days</th>
-                            <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Bill Amount</th>
-                            <th rowspan="2" class="num">Raw Cost</th>
+                            <th colspan="3" class="num" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Transfer Price</th>
                         </tr>
                         <tr class="sub-header-row">
                             <th class="num sub-header col-sep">ICB</th>
@@ -81,7 +91,8 @@
                             <th class="num sub-header col-sep">ICB</th>
                             <th class="num sub-header col-group-right">FORECAST</th>
                             <th class="num sub-header col-sep">ICB</th>
-                            <th class="num sub-header col-group-right">FORECAST</th>
+                            <th class="num sub-header col-sep">FORECAST</th>
+                            <th class="num sub-header">GAP</th>
                         </tr>
                     </thead>
                     <tbody id="table-body"></tbody>
@@ -91,6 +102,23 @@
 
 
     </main>
+
+    <!-- Export Modal -->
+    <div class="modal-overlay" id="export-modal" style="display:none;">
+        <div class="modal-box">
+            <div class="modal-header">Export to Excel</div>
+            <div class="modal-body">
+                <label class="modal-checkbox-label">
+                    <input type="checkbox" id="export-include-comments" checked>
+                    <span>Include "Generated comment" column</span>
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn--close" onclick="closeExportModal()">Cancel</button>
+                <button class="btn btn--export" onclick="submitExport()">Export</button>
+            </div>
+        </div>
+    </div>
 
 <script>
 /* =====================================================================
@@ -152,15 +180,58 @@ async function uploadFile(input) {
         document.getElementById("table-panel").style.display = "flex";
         document.getElementById("global-filters").style.display = "flex";
         document.getElementById("month-bar").classList.add("visible");
-        document.getElementById("btn-export").style.display = "inline-flex";
+        document.getElementById("btn-export").style.display = "inline-block";
+        
+        // Cacher le bouton ICB car on ne permet pas de recharger par dessus
+        document.getElementById("btn-upload").style.display = "none";
+        
+        // Afficher le bouton forecast apres avoir upload l'ICB
+        document.getElementById("btn-upload-forecast").style.display = "inline-block";
+        document.getElementById("btn-reset").style.display = "inline-flex";
         document.getElementById("search-wrapper").style.display = "flex";
         document.getElementById("search-input").value = "";
+        
+        document.getElementById("status-text").textContent = `Fichier actif: ${file.name} (${data.filtered_lines} lignes)`;
+        document.getElementById("status-text").classList.add("header__status--loaded");
         closeAllInlineDetails();
     } catch (e) {
         alert("Erreur reseau : " + e.message);
     } finally {
         document.getElementById("loading-overlay").classList.remove("active");
         input.value = "";  // reset input so same file can be re-uploaded
+    }
+}
+
+async function uploadForecast(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const overlay = document.getElementById("loading-overlay");
+    overlay.querySelector("div").textContent = "Chargement du Forecast en cours...";
+    overlay.classList.add("active");
+
+    try {
+        const res = await fetch("/api/upload_forecast", {
+            method: "POST",
+            body: formData
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            alert(data.error || "Erreur lors du chargement Forecast");
+        } else {
+            // Cache definitivement le bouton d'import forecast
+            document.getElementById("btn-upload-forecast").style.display = "none";
+            // Recharge la hierarchie pour afficher les nouvelles colonnes
+            await loadHierarchy();
+        }
+    } catch (err) {
+        alert("Erreur de connexion.");
+    } finally {
+        overlay.classList.remove("active");
+        overlay.querySelector("div").textContent = "Chargement du fichier en cours...";
+        input.value = "";
     }
 }
 
@@ -213,6 +284,7 @@ async function loadHierarchy() {
     if (globalEnd) url += `end_date=${globalEnd}&`;
     const resp = await fetch(url);
     const data = await resp.json();
+    window.currentHierarchyData = data;
     renderHierarchy(data);
 }
 
@@ -237,6 +309,27 @@ async function applyGlobalDateFilter() {
     await loadHierarchy();
 }
 
+// -- Gap detection: compare ICB vs FORECAST values --
+function getGapTolerance() {
+    const val = document.getElementById("gap-tolerance-input").value;
+    return parseFloat(val) || 0;
+}
+
+function updateGapTolerance() {
+    if (window.currentHierarchyData) {
+        renderHierarchy(window.currentHierarchyData);
+    }
+}
+
+function hasGapAmount(icb, forecast) {
+    if (icb == null || forecast == null || icb === "" || forecast === "") return false;
+    return Math.abs(icb - forecast) > getGapTolerance();
+}
+function hasGapDays(icb, forecast) {
+    if (icb == null || forecast == null || icb === "" || forecast === "") return false;
+    return icb !== forecast;
+}
+
 // -- Render hierarchy table --
 function renderHierarchy(ccProjects) {
     const tbody = document.getElementById("table-body");
@@ -244,12 +337,17 @@ function renderHierarchy(ccProjects) {
 
     if (!ccProjects || ccProjects.length === 0) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="8" style="text-align:center;padding:32px;color:#718096;">Aucune donnee pour cette periode.</td>';
+        tr.innerHTML = '<td colspan="11" style="text-align:center;padding:32px;color:#718096;">Aucune donnee pour cette periode.</td>';
         tbody.appendChild(tr);
         return;
     }
 
     ccProjects.forEach(cc => {
+        // Pre-compute gap flags for CC project totals
+        const ccGapWd = hasGapDays(cc.totals.working_days, cc.totals.forecast_working_days);
+        const ccGapBa = hasGapAmount(cc.totals.bill_amount, cc.totals.forecast_bill_amount);
+        const ccGapNcr = hasGapAmount(cc.totals.ncr, cc.totals.forecast_ncr);
+
         // -- CC Project row (top-level) --
         const ccRow = document.createElement("tr");
         ccRow.className = "row-cc collapsed";
@@ -257,20 +355,27 @@ function renderHierarchy(ccProjects) {
         const label = cc.project_name
             ? esc(cc.project_name) + ' — ' + esc(cc.cc_project_number)
             : esc(cc.cc_project_number);
+        // Compute Cost gap (signed value)
+        const ccCostGapVal = (cc.totals.forecast_working_days > 0) ? (cc.totals.bill_amount - cc.totals.forecast_bill_amount) : null;
         ccRow.innerHTML =
             '<td colspan="4"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
-            '<td></td>' + // NCR ICB
-            '<td></td>' + // NCR FORECAST
-            '<td class="num">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
-            '<td></td>' + // WD FORECAST
-            '<td class="num">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
-            '<td></td>' + // BA FORECAST
-            '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>';
+            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
+            '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
+            '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
+            '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && Math.abs(ccCostGapVal) > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>';
         ccRow.onclick = () => toggleCC(cc.cc_project_number);
         tbody.appendChild(ccRow);
 
         // -- Consultant rows --
         cc.consultants.forEach((cons, idx) => {
+            // Pre-compute gap flags per consultant
+            const gapNcr = hasGapAmount(cons.ncr, cons.forecast_ncr);
+            const gapWd = hasGapDays(cons.working_days, cons.forecast_working_days);
+            const gapBa = hasGapAmount(cons.total_bill_amount, cons.forecast_bill_amount);
+
             const consRow = document.createElement("tr");
             let cls = "row-consultant";
             if (idx % 2 === 1) cls += " alt";
@@ -280,18 +385,27 @@ function renderHierarchy(ccProjects) {
             consRow.dataset.cc = cc.cc_project_number;
             consRow.dataset.emp = cons.employee_id;
             consRow.dataset.projectname = cc.project_name || "";
+            // Compute Cost gap per consultant (signed value)
+            const consCostGapVal = (cons.forecast_working_days > 0) ? (cons.total_bill_amount - cons.forecast_bill_amount) : null;
+            // Source badge (ICB only / Forecast only)
+            let sourceBadge = '';
+            if (cons.source === 'icb_only') {
+                sourceBadge = '<span class="source-badge badge-icb" title="Present in ICB only — no matching Forecast entry">ICB</span>';
+            } else if (cons.source === 'forecast_only') {
+                sourceBadge = '<span class="source-badge badge-fc" title="Present in Forecast only — no matching ICB entry">FC</span>';
+            }
             consRow.innerHTML =
-                '<td class="label-indent-1"></td>' +
+                '<td class="label-indent-1">' + sourceBadge + '</td>' +
                 '<td>' + esc(cons.employee_id) + '</td>' +
                 '<td>' + esc(cons.name) + '</td>' +
                 '<td>' + esc(cons.grade) + '</td>' +
-                '<td class="num">' + fmt(cons.ncr) + '</td>' + // NCR ICB
-                '<td></td>' + // NCR FORECAST
-                '<td class="num">' + fmt(cons.working_days) + '</td>' + // WD ICB
-                '<td></td>' + // WD FORECAST
-                '<td class="num">' + fmt(cons.total_bill_amount) + '</td>' + // BA ICB
-                '<td></td>' + // BA FORECAST
-                '<td class="num">' + fmt(cons.total_raw_cost) + '</td>';
+                '<td class="num' + (gapNcr ? ' cell-gap' : '') + '">' + fmt(cons.ncr) + '</td>' + // NCR ICB
+                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+                '<td class="num' + (gapWd ? ' cell-gap' : '') + '">' + fmt(cons.working_days) + '</td>' + // WD ICB
+                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_working_days) : '') + '</td>' + // WD FORECAST
+                '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + fmt(cons.total_bill_amount) + '</td>' + // BA ICB
+                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+                '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + (consCostGapVal != null && Math.abs(consCostGapVal) > getGapTolerance() ? fmt(consCostGapVal) : '') + '</td>';
             consRow.dataset.consName = cons.name;
             consRow.onclick = (e) => { e.stopPropagation(); toggleDetail(consRow); };
             tbody.appendChild(consRow);
@@ -302,16 +416,17 @@ function renderHierarchy(ccProjects) {
         totRow.className = "row-totals";
         totRow.style.display = "none";
         totRow.dataset.cc = cc.cc_project_number;
+        // Reuse ccCostGapVal (signed) computed above for totals
         totRow.innerHTML =
             '<td class="label-indent-1"></td>' +
             '<td colspan="3">TOTAL ' + esc(cc.cc_project_number) + '</td>' +
-            '<td></td>' + // NCR ICB
-            '<td></td>' + // NCR FORECAST
-            '<td class="num">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
-            '<td></td>' + // WD FORECAST
-            '<td class="num">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
-            '<td></td>' + // BA FORECAST
-            '<td class="num">' + fmt(cc.totals.raw_cost) + '</td>';
+            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
+            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
+            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
+            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && Math.abs(ccCostGapVal) > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>';
         tbody.appendChild(totRow);
     });
 }
@@ -379,7 +494,7 @@ async function toggleDetail(rowEl) {
     html += '<table class="detail-table"><thead><tr>';
     html += '<th>ID Transaction</th><th>Date</th><th>Type depense</th><th>Facture</th>';
     html += '<th class="num">Working Days</th><th class="num">NCR</th>';
-    html += '<th class="num">Raw Cost</th><th class="num">Bill Amount</th>';
+    html += '<th class="num">Raw Cost</th><th class="num">Transfer Price</th>';
     html += '</tr></thead><tbody>';
     txns.forEach((t, i) => {
         let rowClass = (i % 2 === 0 ? 'even' : 'odd');
@@ -434,48 +549,47 @@ function applySearch(query) {
         return;
     }
 
-    // track which cc projects have visible consultants
+    // track which cc projects match the query (either directly or via their consultants)
     const visibleCCs = new Set();
 
-    // first pass: check consultant rows (text + cc number + project name)
     rows.forEach(row => {
-        if (!row.classList.contains("row-consultant")) return;
-        const text = row.textContent.toLowerCase();
-        const cc = (row.dataset.cc || "").toLowerCase();
-        const projectName = (row.dataset.projectname || "").toLowerCase();
-        const matches = text.includes(q) || cc.includes(q) || projectName.includes(q);
-        row.style.display = matches ? "" : "none";
-        if (matches) {
-            visibleCCs.add(row.dataset.cc);
+        if (row.classList.contains("row-consultant")) {
+            const text = row.textContent.toLowerCase();
+            const cc = (row.dataset.cc || "").toLowerCase();
+            const projectName = (row.dataset.projectname || "").toLowerCase();
+            if (text.includes(q) || cc.includes(q) || projectName.includes(q)) {
+                visibleCCs.add(row.dataset.cc);
+            }
+        } else if (row.classList.contains("row-cc")) {
+            const ccText = row.textContent.toLowerCase();
+            if (ccText.includes(q)) {
+                visibleCCs.add(row.dataset.cc);
+            }
         }
     });
 
-    // also check CC rows directly (project name is in their text content)
-    rows.forEach(row => {
-        if (!row.classList.contains("row-cc")) return;
-        const ccText = row.textContent.toLowerCase();
-        if (ccText.includes(q)) {
-            visibleCCs.add(row.dataset.cc);
-        }
-    });
-
-    // show all consultant rows for matched CC projects
-    rows.forEach(row => {
-        if (row.classList.contains("row-consultant") && visibleCCs.has(row.dataset.cc)) {
-            row.style.display = "";
-        }
-    });
-
-    // second pass: show/hide cc and totals rows
+    // Update display based on matched CCs AND their collapsed state
     rows.forEach(row => {
         if (row.classList.contains("row-cc")) {
+            // Show the CC row only if it matches
             row.style.display = visibleCCs.has(row.dataset.cc) ? "" : "none";
-        } else if (row.classList.contains("row-totals")) {
-            row.style.display = visibleCCs.has(row.dataset.cc) ? "" : "none";
+        } else if (row.dataset.cc) {
+            // For consultants, totals, and inline details
+            if (!visibleCCs.has(row.dataset.cc)) {
+                row.style.display = "none";
+            } else {
+                // The project matches. We only show the child rows if the project is NOT collapsed.
+                const ccRow = document.querySelector(`.row-cc[data-cc="${row.dataset.cc}"]`);
+                if (ccRow && ccRow.classList.contains("collapsed")) {
+                    row.style.display = "none";
+                } else {
+                    // It's expanded and matches, so show it
+                    row.style.display = "";
+                }
+            }
         }
     });
 }
-
 // -- Escape HTML --
 function esc(val) {
     if (val == null) return "";
@@ -484,12 +598,27 @@ function esc(val) {
     return d.innerHTML;
 }
 
-// -- Export --
+// -- Export Modal --
+function showExportModal() {
+    document.getElementById('export-modal').style.display = 'flex';
+}
+
+function closeExportModal() {
+    document.getElementById('export-modal').style.display = 'none';
+}
+
 function submitExport() {
+    closeExportModal();
     let url = "/api/export?";
     if (currentMonth) url += `month=${currentMonth}&`;
     if (globalStart) url += `start_date=${globalStart}&`;
     if (globalEnd) url += `end_date=${globalEnd}&`;
+    
+    const gapTol = document.getElementById("gap-tolerance-input").value;
+    if (gapTol) url += `gap_tolerance=${gapTol}&`;
+    
+    const includeComments = document.getElementById('export-include-comments').checked;
+    url += `include_comments=${includeComments ? '1' : '0'}&`;
     
     fetch(url)
         .then(res => res.json())
@@ -503,6 +632,48 @@ function submitExport() {
         .catch(err => {
             alert("Erreur réseau : " + err);
         });
+}
+// -- Reset / Décharger --
+async function resetApp() {
+    try {
+        await fetch("/api/reset", { method: "POST" });
+    } catch (e) {
+        // ignore network errors on reset
+    }
+
+    // Reset state
+    currentMonth = null;
+    availableMonths = [];
+    globalStart = null;
+    globalEnd = null;
+    selectedConsRow = null;
+    window.currentHierarchyData = null;
+
+    // Reset UI
+    document.getElementById("table-body").innerHTML = "";
+    document.getElementById("table-panel").style.display = "none";
+    document.getElementById("empty-state").style.display = "flex";
+    document.getElementById("global-filters").style.display = "none";
+    document.getElementById("month-bar").classList.remove("visible");
+    document.getElementById("btn-export").style.display = "none";
+    document.getElementById("btn-upload-forecast").style.display = "none";
+    document.getElementById("btn-reset").style.display = "none";
+    document.getElementById("search-wrapper").style.display = "none";
+    document.getElementById("search-input").value = "";
+    document.getElementById("global-start").value = "";
+    document.getElementById("global-end").value = "";
+
+    // Re-show upload button
+    document.getElementById("btn-upload").style.display = "inline-flex";
+
+    // Reset status
+    const status = document.getElementById("status-text");
+    status.textContent = "Aucun fichier charge";
+    status.classList.remove("header__status--loaded");
+
+    // Clear file inputs
+    document.getElementById("file-input").value = "";
+    document.getElementById("forecast-input").value = "";
 }
 </script>
 </body>

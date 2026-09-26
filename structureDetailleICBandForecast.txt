@@ -1,0 +1,180 @@
+# Structure détaillée des fichiers ICB et Forecast
+
+Document de référence technique pour l'agent travaillant sur le code. Basé sur l'analyse directe des fichiers réels (`icb.xlsx`, `forecast.xlsx`).
+
+---
+
+## 1. Fichier ICB (`icb.xlsx`)
+
+### 1.1 Généralités
+- Feuille unique : `Sheet1`
+- En-têtes à la **ligne 1**
+- **44 890 lignes de données réelles** (lignes 2 à 44891) — sur cette version du fichier, le nombre de lignes déclaré par Excel correspond au nombre réel (pas de décalage constaté).
+- Au-delà de la colonne **BJ (62)**, les colonnes `BK` à `DP` (`Column1` … `Column58`) sont des **colonnes fantômes vides**, artefact de l'export source. Aucune donnée utile au-delà de BJ — l'agent doit les ignorer/les exclure du parsing.
+
+### 1.2 Liste complète des colonnes utiles (A à BJ)
+
+| Col | Nom | Type / Format observé | Notes métier |
+|---|---|---|---|
+| A | Expenditure Item Id | identifiant numérique | |
+| B | Project Number | code alphanumérique (ex: `ABC12DE34`) | ≠ CC Project Number, ne pas confondre |
+| C | **CC Project Number** | str, format `XXXX_999` | **Clé de mapping projet** avec le Forecast (`Project Num`) |
+| D | Task Number | | |
+| E | Task Name | | |
+| F | Invoice Number | | |
+| G | Invoice Type | | |
+| H | **Employee Number** | str, format `9999_999` (préfixe `6427_` + ID numérique) | **Clé de mapping consultant** avec le Forecast (`GGID`) — **toujours retirer le préfixe `6427_` avant comparaison**, des deux côtés (ICB et Forecast) |
+| I | Full Name | nom du consultant | |
+| J | Emp Grade | | |
+| K | Job Qual | | |
+| L | Job Qual 1 | doublon potentiel de K, à vérifier avant usage | |
+| M | Emp Grade2 | doublon potentiel de J, à vérifier avant usage | |
+| N | Provider Unit Code | | |
+| O | Provider Operating Unit | | |
+| P | Receiver Unit Code | | |
+| Q | Receiver Operating Unit | | |
+| R | **Expenditure Type** | catégoriel, 19 valeurs distinctes (liste ci-dessous) | Filtre métier principal |
+| S | Expenditure Item Date | datetime (parfois lu comme numéro de série Excel selon le lecteur — prévoir `excel_serial_to_date` en fallback) | |
+| T | Expenditure Comment | | |
+| U | GL date | | |
+| V | Invoice Date | | |
+| W | Bill Through Date | | |
+| X | **Quantity** | int (heures) | Base de `Working Days` = Quantity / 8 |
+| Y | **UOM** | seulement 2 valeurs : `HOURS` ou `AMOUNT` | Filtrer `UOM = HOURS` pour les lignes RC pertinentes |
+| Z | **Bill Rate** | float/int | Base de `NCR` = Bill Rate × 8 |
+| AA | **Raw Cost** | float | Règle : \|Raw Cost\| = 0.75 × \|Bill Amount\| (RC_Time Std uniquement, tolérance relative 2%) |
+| AB | **Bill Amount** | int/float | Le "vrai" Bill Amount (voir AD ci-dessous pour un doublon potentiel) |
+| AC | Currency Code | | |
+| AD | Bill Amount3 | **nom dupliqué** — probablement un montant dans une devise différente ou un doublon technique ; à vérifier avant utilisation, ne pas confondre avec AB |
+| AE | Currency Code4 | | |
+| AF | Revenue Project TP | | |
+| AG | Currency Code5 | | |
+| AH | Customer Revenue | | |
+| AI | Currency Code6 | | |
+| AJ | Customer Revenue7 | | |
+| AK | Currency Code8 | | |
+| AL | Concat Account | | |
+| AM | Company Code | | |
+| AN | Account Code | | |
+| AO | Analytical Code | | |
+| AP | Prod Unit Code | | |
+| AQ | Project Code | | |
+| AR | Bu Code | | |
+| AS | Bu Name | | |
+| AT | Sbu Code | | |
+| AU | Sbu Name | | |
+| AV | Job Function Code | | |
+| AW | Customer Code | | |
+| AX | Segment 8 Code | | |
+| AY | Trading Prod Unit Code | | |
+| AZ | Interco Code | | |
+| BA | Customer | | |
+| BB | **Project Name** | | Nom affiché du projet |
+| BC | GL Month & Year | | |
+| BD | GL Month | | |
+| BE | GL Month Text | | |
+| BF | GL Year Text | | |
+| BG | PA Month & Year | | |
+| BH | Margin Check | | |
+| BI | Adjustment check | | |
+| BJ | **FULL NCR to Direct NCR correlation** | float | Détection d'anomalie : cible 0.75 ± 0.05, anomalie si hors [0.70, 0.80] en valeur absolue |
+
+### 1.3 Valeurs distinctes de `Expenditure Type` (colonne R)
+```
+RC_Time Std
+RC_Overtime Std Cost
+RC_Overtime Std Cost x1.25
+RC_Overtime Std Cost x1.5
+RC_Overtime Std Cost x2
+RC_Remun Other Allowances
+TRVL_Other, TRVL_Hotel, TRVL_Visa, TRVL_Taxi/Limo
+IT_Telephony Usage Mobile, IT_Licenses fees, IT_PC/Mob Device HW Expense
+MKG_Events Internal
+GS_Company Paid Travel Undiff, GS_Courier Services, GS_External Meeting Rooms, GS_Photocopying
+FM_Furn/Fixt Maint Small Purch
+```
+Seules les lignes `RC_Time Std` (et éventuellement les variantes `RC_Overtime*` selon le besoin métier) sont pertinentes pour les calculs NCR/Working Days/Bill Amount.
+
+### 1.4 Anomalie de données observée
+- Une occurrence trouvée où le préfixe de `Employee Number` n'est pas `6427` (valeur atypique) — l'agent doit gérer ce cas sans planter (ex: si pas de `_` dans l'ID, ne rien retirer).
+
+---
+
+## 2. Fichier Forecast (`forecast.xlsx`)
+
+### 2.1 Généralités
+- Feuille unique
+- **Lignes 1 à 5** : benchmarks globaux de référence (Avg RC, Eng BTU = 21 jours ouvrés, Vacation Baseline, Total per month) — **à ignorer complètement**, non liés à un projet spécifique.
+- **Ligne 6** : en-têtes réels des colonnes.
+- **Aucune formule** dans le fichier — tout est en valeurs brutes figées.
+- **Aucune année indiquée** — les mois listés doivent être considérés comme appartenant à **l'année système actuelle** (année du jour au moment de l'import).
+
+### 2.2 Colonnes d'identité (A à D)
+
+| Col | Nom | Notes |
+|---|---|---|
+| A | **Project Num** | Clé de mapping avec `CC Project Number` (ICB, colonne C) |
+| B | Project Name | affichage uniquement |
+| C | **GGID** | Clé de mapping avec `Employee Number` (ICB, colonne H) — retirer le préfixe `6427_` des deux côtés avant comparaison |
+| D | Employee Name | affichage uniquement |
+
+### 2.3 Blocs mensuels (12 blocs de 6 colonnes, Janvier → Décembre)
+
+| Mois | Colonnes | Grade | F.RC | Vaca | Prod | Cost | FTE |
+|---|---|---|---|---|---|---|---|
+| Janvier | G–L | G | H | I | J | K | L |
+| Février | M–R | M | N | O | P | Q | R |
+| Mars | S–X | S | T | U | V | W | X |
+| Avril | Y–AD | Y | Z | AA | AB | AC | AD |
+| Mai | AE–AJ | AE | AF | AG | AH | AI | AJ |
+| Juin | AK–AP | AK | AL | AM | AN | AO | AP |
+| Juillet | AQ–AV | AQ | AR | AS | AT | AU | AV |
+| Août | AW–BB | AW | AX | AY | AZ | BA | BB |
+| Septembre | BC–BH | BC | BD | BE | BF | BG | BH |
+| Octobre | BI–BN | BI | BJ | BK | BL | BM | BN |
+| Novembre | BO–BT | BO | BP | BQ | BR | BS | BT |
+| Décembre | BU–BZ | BU | BV | BW | BX | BY | BZ |
+
+**Formules internes observées (utiles pour valider un parsing correct)** :
+- `Cost = F.RC × Prod`
+- `FTE = Prod / 21` (21 = jours ouvrés du mois, cf. benchmark "Eng BTU" ligne 3)
+
+**Mapping vers les colonnes FORECAST de l'app ICB** (règle métier déjà validée) :
+- `Prod` → **Working Days FORECAST**
+- `Cost` → **Bill Amount FORECAST**
+- `F.RC` → **NCR FORECAST**
+- `Grade`, `Vaca`, `FTE` → **non utilisés**, à ignorer.
+
+### 2.4 Blocs annuels (après Décembre, colonnes CA à CI)
+
+| Col | Nom | Contenu |
+|---|---|---|
+| CA–CE | F.RC / Vaca / Prod / Cost / FTE | **Total annuel** |
+| CF–CI | TR Q1 / TR Q2 / TR Q3 / TR Q4 | **Totaux trimestriels** (probablement Cost cumulé par trimestre) |
+
+**Ces colonnes ne sont PAS utilisées** pour remplir les FORECAST de l'app — l'app recalcule déjà ses propres totaux à partir des 12 blocs mensuels.
+
+### 2.5 ⚠️ Structure multi-projets en production (POINT CRITIQUE)
+
+Le fichier actuel ne contient **qu'un seul projet** (13 consultants, lignes 7 à 19, + 1 ligne "Total" ligne 20). **En production, plusieurs projets seront empilés les uns sous les autres dans la même feuille, sans répétition de la ligne d'en-tête (ligne 6 n'apparaît qu'une seule fois en haut du fichier).**
+
+Structure exacte d'un bloc-projet (vérifiée sur l'exemple) :
+1. **N lignes consultants** : les colonnes **A (Project Num) et B (Project Name) sont fusionnées** (merged cells) sur toute la hauteur du bloc — ex. `A7:A19` et `B7:B19` fusionnées. Colonnes C (GGID) et D (Employee Name) renseignées individuellement par ligne.
+2. **1 ligne "Total projet"** immédiatement après, **non fusionnée** avec le bloc précédent : Project Num et Project Name répétés en valeur simple, mais **GGID (C) et Employee Name (D) sont vides**. Les colonnes F.RC/Vaca/Prod/Cost/FTE de cette ligne contiennent les totaux du projet (Grade est vide).
+3. Le bloc-projet suivant recommence directement après (pas de ligne vide de séparation constatée dans l'exemple, mais l'agent doit rester tolérant à une éventuelle ligne vide entre projets).
+
+**Consignes obligatoires pour l'agent** :
+- **Ne jamais coder en dur des numéros de ligne fixes** (type "lignes 7 à 20") — cela ne fonctionnera que pour un fichier à un seul projet.
+- Détecter dynamiquement les limites de chaque bloc-projet en lisant les plages fusionnées de la colonne A (`ws.merged_cells.ranges`), ou par détection de rupture de valeur dans la colonne Project Num en parcourant les lignes séquentiellement à partir de la ligne 7.
+- Détecter une **ligne "Total projet"** (à exclure du mapping consultant par consultant) via la règle : `Project Num` renseigné **ET** `GGID` vide **ET** `Employee Name` vide.
+- Attention avec `openpyxl` : dans une plage fusionnée, seule la cellule en haut à gauche porte la valeur ; les autres cellules de la fusion retournent `None` (que ce soit en mode normal ou `read_only`). Il faut donc soit lire uniquement la cellule d'ancrage de chaque fusion, soit faire un forward-fill basé sur les plages fusionnées — ne pas supposer que chaque ligne du bloc contient Project Num/Project Name en valeur directe.
+
+---
+
+## 3. Résumé des clés de mapping (rappel)
+
+| | ICB | Forecast |
+|---|---|---|
+| Projet | `CC Project Number` (col C) | `Project Num` (col A) |
+| Consultant | `Employee Number` (col H) | `GGID` (col C) |
+| Normalisation obligatoire | retirer le préfixe `6427_` si présent, des deux côtés, avant toute comparaison | idem |

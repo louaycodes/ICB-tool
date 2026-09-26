@@ -1,0 +1,52 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ forecast, main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Récupérer le code
+      uses: actions/checkout@v4
+
+    - name: Configurer Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Installer les dépendances et compiler l'application
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install pyinstaller
+        if (Test-Path requirements.txt) { python -m pip install -r requirements.txt }
+
+        # 1. Créer le dossier uploads s'il est absent
+        if (-not (Test-Path uploads)) { New-Item -ItemType Directory -Path uploads }
+
+        # 2. Construire les arguments d'inclusion dynamique
+        $add_data_args = @(
+          '--add-data', 'templates;templates',
+          '--add-data', 'static;static',
+          '--add-data', 'uploads;uploads'
+        )
+
+        # Inclure les fichiers Excel seulement s'ils existent dans le dépôt
+        foreach ($file in @('forecast.xlsx', 'icb.xlsx', 'icb2.xlsx')) {
+          if (Test-Path $file) {
+            $add_data_args += '--add-data'
+            $add_data_args += "$file;."
+          }
+        }
+
+        # 3. Exécuter PyInstaller
+        python -m PyInstaller --onefile --windowed @add_data_args --hidden-import openpyxl icb_desktop.py
+
+    - name: Mettre à disposition le fichier .exe
+      uses: actions/upload-artifact@v4
+      with:
+        name: ICB-Analysis-Windows
+        path: dist/*.exe
