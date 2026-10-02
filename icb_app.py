@@ -47,7 +47,7 @@ NCR_CORRELATION_TOLERANCE = 0.05  # valide si abs(correlation) dans [0.70, 0.80]
 
 # --- Flask app ---
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 Mo max pour l'upload
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 50 Mo max pour l'upload
 
 # stockage en memoire du pipeline (une seule session)
 pipeline = None
