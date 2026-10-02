@@ -1117,7 +1117,17 @@ class ICBPipeline:
             })
         return result
 
-    def export_to_excel(self, month_filter, start_date, end_date, gap_tolerance=2.0, include_comments=True):
+    def export_to_excel(
+        self,
+        month_filter,
+        start_date,
+        end_date,
+        gap_tolerance=2.0,
+        include_comments=True,
+        include_working_days=False,
+        include_raw_cost=False,
+        include_controlling_comments=True,
+    ):
         import io
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -1149,28 +1159,44 @@ class ICBPipeline:
 
                 data = self.hierarchy_data(month_filter=month, start_date=start_date, end_date=end_date)
 
-                # Column headers — "Generated comment" is optional
-                headers = [
-                    "EM_Lead", 
-                    "Project Name", 
-                    "CC Project Number", 
-                    "Working Days", 
-                    "ICB Transfer Price", 
-                    "Forecast Transfer Price", 
-                    "Gap", 
-                    "Raw Cost", 
-                    "Issue Type", 
+                # Column specifications: (key, header_title, width, is_numeric, is_comment)
+                col_specs = [
+                    ("em_lead", "EM_Lead", 25, False, False),
+                    ("project_name", "Project Name", 40, False, False),
+                    ("cc_project_number", "CC Project Number", 25, False, False),
                 ]
+                if include_working_days:
+                    col_specs.append(("working_days", "Working Days", 15, True, False))
+
+                col_specs.append(("icb_tp", "ICB Transfer Price", 20, True, False))
+                col_specs.append(("forecast_tp", "Forecast Transfer Price", 22, True, False))
+                col_specs.append(("gap", "Gap", 15, True, False))
+
+                if include_raw_cost:
+                    col_specs.append(("raw_cost", "Raw Cost", 15, True, False))
+
+                col_specs.append(("issue_type", "Issue Type", 25, False, False))
+
                 if include_comments:
-                    headers.append("Generated comment")
+                    col_specs.append(("generated_comment", "Generated comment", 60, False, True))
+
+                if include_controlling_comments:
+                    col_specs.append(("controlling_comment", "Controlling comment", 40, False, True))
+
+                headers = [spec[1] for spec in col_specs]
                 num_cols = len(headers)
                 ws.append(headers)
+
+                icb_col_idx = [i + 1 for i, s in enumerate(col_specs) if s[0] == "icb_tp"][0]
+                fc_col_idx = [i + 1 for i, s in enumerate(col_specs) if s[0] == "forecast_tp"][0]
+                icb_col_letter = get_column_letter(icb_col_idx)
+                fc_col_letter = get_column_letter(fc_col_idx)
 
                 current_row = 2
                 for cc in data:
                     norm_proj = ExpenditureItem._normalize_key(cc['cc_project_number'])
 
-                    # --- Col 6 : Forecast Bill Amount ---
+                    # --- Col Forecast Transfer Price ---
                     has_any_forecast = False
                     forecast_ba_total = 0.0
                     for fk, fd in self.forecast_data.items():
@@ -1242,35 +1268,37 @@ class ICBPipeline:
                         else:
                             comment = "Cost issue (requires manual verification)"
 
-                    row_data = [
-                        "", # 1. EM_Lead
-                        cc['project_name'] or "", # 2. Project Name
-                        cc['cc_project_number'], # 3. CC Project Number
-                        cc['totals']['working_days'], # 4. Working Days
-                        cc['totals']['bill_amount'], # 5. ICB Transfer Price
-                        forecast_cell_value, # 6. Forecast Transfer Price
-                        f"=E{current_row}-F{current_row}", # 7. Gap (signed, no abs)
-                        cc['totals']['raw_cost'], # 8. Raw Cost
-                        "", # 9. Issue Type
-                    ]
-                    if include_comments:
-                        row_data.append(comment) # 10. Generated comment
+                    gap_formula = f"={icb_col_letter}{current_row}-{fc_col_letter}{current_row}"
+
+                    value_map = {
+                        "em_lead": "",
+                        "project_name": cc['project_name'] or "",
+                        "cc_project_number": cc['cc_project_number'],
+                        "working_days": cc['totals']['working_days'],
+                        "icb_tp": cc['totals']['bill_amount'],
+                        "forecast_tp": forecast_cell_value,
+                        "gap": gap_formula,
+                        "raw_cost": cc['totals']['raw_cost'],
+                        "issue_type": "",
+                        "generated_comment": comment if include_comments else "",
+                        "controlling_comment": "",
+                    }
+                    row_data = [value_map[spec[0]] for spec in col_specs]
                     ws.append(row_data)
 
                     # Alignment
                     for col in range(1, num_cols + 1):
                         cell = ws.cell(row=current_row, column=col)
-                        if col in [4, 5, 6, 7, 8]:
+                        spec = col_specs[col - 1]
+                        if spec[3]:  # is_numeric
                             cell.alignment = right_align
-                        elif include_comments and col == num_cols:
-                            # Multi-line comment: wrap_text + vertical top
+                        elif spec[4]:  # is_comment
                             cell.alignment = Alignment(
                                 wrap_text=True,
                                 vertical='top',
                                 horizontal='left',
                             )
-                            # Calculer la hauteur de ligne necessaire
-                            if comment:
+                            if spec[0] == "generated_comment" and comment:
                                 num_lines = comment.count("\n") + 1
                                 needed_height = max(15, num_lines * 15)
                                 current_height = ws.row_dimensions[current_row].height or 15
@@ -1290,17 +1318,8 @@ class ICBPipeline:
                     ws.add_table(tab)
 
                 # Column width adjustments
-                ws.column_dimensions['A'].width = 25 # EM_Lead
-                ws.column_dimensions['B'].width = 40 # Project Name
-                ws.column_dimensions['C'].width = 25 # CC Project Number
-                ws.column_dimensions['D'].width = 15 # Working Days
-                ws.column_dimensions['E'].width = 20 # ICB Transfer Price
-                ws.column_dimensions['F'].width = 22 # Forecast Transfer Price
-                ws.column_dimensions['G'].width = 15 # Gap
-                ws.column_dimensions['H'].width = 15 # Raw Cost
-                ws.column_dimensions['I'].width = 25 # Issue Type
-                if include_comments:
-                    ws.column_dimensions['J'].width = 60 # Generated comment
+                for col_idx, spec in enumerate(col_specs, start=1):
+                    ws.column_dimensions[get_column_letter(col_idx)].width = spec[2]
 
             # =================================================================
             # FEUILLE KPI DASHBOARD
@@ -1957,11 +1976,23 @@ def export_excel():
     except ValueError:
         gap_tolerance = 2.0
     
-    # Whether to include the "Generated comment" column
+    # Whether to include optional columns
+    include_working_days = request.args.get("include_working_days", "0") in ("1", "true", "yes")
+    include_raw_cost = request.args.get("include_raw_cost", "0") in ("1", "true", "yes")
     include_comments = request.args.get("include_comments", "1") in ("1", "true", "yes")
+    include_controlling_comments = request.args.get("include_controlling_comments", "1") in ("1", "true", "yes")
     
     try:
-        buffer = pipeline.export_to_excel(month_filter=month, start_date=start_date, end_date=end_date, gap_tolerance=gap_tolerance, include_comments=include_comments)
+        buffer = pipeline.export_to_excel(
+            month_filter=month,
+            start_date=start_date,
+            end_date=end_date,
+            gap_tolerance=gap_tolerance,
+            include_comments=include_comments,
+            include_working_days=include_working_days,
+            include_raw_cost=include_raw_cost,
+            include_controlling_comments=include_controlling_comments,
+        )
         
         import os
         if start_date and end_date:

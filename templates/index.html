@@ -108,10 +108,24 @@
         <div class="modal-box">
             <div class="modal-header">Export to Excel</div>
             <div class="modal-body">
-                <label class="modal-checkbox-label">
-                    <input type="checkbox" id="export-include-comments" checked>
-                    <span>Include "Generated comment" column</span>
-                </label>
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                    <label class="modal-checkbox-label">
+                        <input type="checkbox" id="export-working-days">
+                        <span>Working Days</span>
+                    </label>
+                    <label class="modal-checkbox-label">
+                        <input type="checkbox" id="export-raw-cost">
+                        <span>Raw Cost</span>
+                    </label>
+                    <label class="modal-checkbox-label">
+                        <input type="checkbox" id="export-include-comments" checked>
+                        <span>Generated comment</span>
+                    </label>
+                    <label class="modal-checkbox-label">
+                        <input type="checkbox" id="export-controlling-comments" checked>
+                        <span>Controlling comment</span>
+                    </label>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn--close" onclick="closeExportModal()">Cancel</button>
@@ -617,8 +631,15 @@ function submitExport() {
     const gapTol = document.getElementById("gap-tolerance-input").value;
     if (gapTol) url += `gap_tolerance=${gapTol}&`;
     
+    const includeWd = document.getElementById('export-working-days').checked;
+    const includeRc = document.getElementById('export-raw-cost').checked;
     const includeComments = document.getElementById('export-include-comments').checked;
+    const includeControlling = document.getElementById('export-controlling-comments').checked;
+
+    url += `include_working_days=${includeWd ? '1' : '0'}&`;
+    url += `include_raw_cost=${includeRc ? '1' : '0'}&`;
     url += `include_comments=${includeComments ? '1' : '0'}&`;
+    url += `include_controlling_comments=${includeControlling ? '1' : '0'}&`;
     
     fetch(url)
         .then(res => res.json())
