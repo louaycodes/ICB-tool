@@ -384,45 +384,55 @@ class ICBPipeline:
         # donc pas de probleme de performance.
         # =================================================================
         wb = openpyxl.load_workbook(path, data_only=True)
-        ws = wb.active
 
-        print(f"\n  Feuille active : '{ws.title}'")
-        print(f"  Dimensions     : {ws.dimensions}")
+        print(f"\n  Feuilles presentes dans le classeur : {wb.sheetnames}")
 
         # =================================================================
-        # 1. DETECTION DE LA LIGNE D'EN-TETES
+        # 1. DETECTION DE LA FEUILLE ET LIGNE D'EN-TETES PRINCIPALES
         # =================================================================
-        print("\n--- 1. DETECTION DE LA LIGNE D'EN-TETES ---")
+        print("\n--- 1. DETECTION DE LA FEUILLE ET LIGNE D'EN-TETES PRINCIPALES ---")
 
+        ws = None
         header_row_idx = None   # 1-indexed
         header_cells = {}       # col_0idx -> str value (stripped)
 
-        for r in range(1, min(ws.max_row + 1, 21)):
-            row_map = {}
-            hits = 0
-            for cell in next(ws.iter_rows(min_row=r, max_row=r,
-                                          max_col=SCAN_MAX_COL,
-                                          values_only=False)):
-                if cell.value is not None and isinstance(cell.value, str):
-                    cleaned = cell.value.strip()
-                    if cleaned:
-                        row_map[cell.column - 1] = cleaned
-                        if cleaned.lower() in IDENTITY_MARKERS:
-                            hits += 1
-            if hits >= 3:
-                header_row_idx = r
-                header_cells = row_map
+        for sname in wb.sheetnames:
+            # Exclure explicitement le sheet Project-EM de la recherche du sheet principal
+            if sname.strip().lower() == "project-em":
+                continue
+
+            candidate_ws = wb[sname]
+            for r in range(1, min(candidate_ws.max_row + 1, 21)):
+                row_map = {}
+                hits = 0
+                for cell in next(candidate_ws.iter_rows(min_row=r, max_row=r,
+                                              max_col=SCAN_MAX_COL,
+                                              values_only=False)):
+                    if cell.value is not None and isinstance(cell.value, str):
+                        cleaned = cell.value.strip()
+                        if cleaned:
+                            row_map[cell.column - 1] = cleaned
+                            if cleaned.lower() in IDENTITY_MARKERS:
+                                hits += 1
+                if hits >= 3:
+                    ws = candidate_ws
+                    header_row_idx = r
+                    header_cells = row_map
+                    break
+            if ws is not None:
                 break
 
-        if header_row_idx is None:
-            print("  [ERROR] Impossible de trouver la ligne d'en-tetes dans "
-                  "les 20 premieres lignes.")
+        if ws is None or header_row_idx is None:
+            print("  [ERROR] Impossible de trouver le sheet principal avec ses en-tetes dans les 20 premieres lignes.")
             print("  Marqueurs recherches : "
                   + ", ".join(sorted(IDENTITY_MARKERS)))
             print("  Import annule (aucune donnee chargee).")
             wb.close()
             return
 
+        main_sheet_title = ws.title
+        print(f"  Sheet principal detecte : '{main_sheet_title}'")
+        print(f"  Dimensions               : {ws.dimensions}")
         print(f"  Ligne d'en-tetes trouvee : ligne {header_row_idx}")
         print(f"  Colonnes avec texte dans cette ligne : {len(header_cells)}")
 
@@ -649,7 +659,7 @@ class ICBPipeline:
         # =================================================================
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         try:
-            ws = wb.active
+            ws = wb[main_sheet_title]
             current_year = datetime.now().year
             current_proj = None
 
