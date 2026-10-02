@@ -261,6 +261,7 @@ class ICBPipeline:
         self.available_months = []
         self.forecast_data = {}  # (cc_proj, emp, month_key) -> {"ncr": float, "working_days": float, "bill_amount": float}
         self.forecast_names = {}  # (norm_proj, norm_ggid) -> employee_name (from forecast file)
+        self.project_em_map = {}  # norm_proj -> em_name (from Project-EM sheet)
 
     def load(self, path):
         # Charger la feuille "ICB_DB" avec detection dynamique des en-tetes
@@ -786,6 +787,55 @@ class ICBPipeline:
                 f"{total_matched_cons}/{total_cons} consultants matches, "
                 f"{cells_filled} cellules remplies"
             )
+            # =============================================================
+            # 7. LECTURE DU SHEET "Project-EM"
+            # =============================================================
+            print("\n--- 7. LECTURE DU SHEET 'Project-EM' ---")
+            em_sheet = None
+            for sname in wb.sheetnames:
+                if sname.strip().lower() == "project-em":
+                    em_sheet = wb[sname]
+                    break
+
+            self.project_em_map = {}
+            if em_sheet is not None:
+                print(f"  Sheet 'Project-EM' detecte : '{em_sheet.title}'")
+                col_em_proj = None
+                col_em_name = None
+                em_header_row = None
+
+                for r in range(1, min(em_sheet.max_row + 1, 15)):
+                    row_vals = [em_sheet.cell(r, c).value for c in range(1, min(em_sheet.max_column + 1, 50))]
+                    for c_idx, val in enumerate(row_vals):
+                        if val and isinstance(val, str):
+                            v_clean = val.strip().lower()
+                            if v_clean in ("project code", "project num", "project number", "code projet"):
+                                col_em_proj = c_idx + 1
+                            elif v_clean in ("em name", "em_name", "em", "nom em", "engagement manager"):
+                                col_em_name = c_idx + 1
+                    if col_em_proj and col_em_name:
+                        em_header_row = r
+                        break
+
+                if em_header_row is not None:
+                    print(f"  En-tetes Project-EM trouves a la ligne {em_header_row} (Col Project Code: {col_em_proj}, Col EM Name: {col_em_name})")
+                    for r in range(em_header_row + 1, em_sheet.max_row + 1):
+                        p_val = em_sheet.cell(r, col_em_proj).value
+                        em_val = em_sheet.cell(r, col_em_name).value
+                        if p_val is not None and str(p_val).strip():
+                            norm_p = ExpenditureItem._normalize_key(p_val)
+                            clean_em = str(em_val).strip() if em_val is not None else ""
+                            if norm_p in self.project_em_map:
+                                if clean_em and self.project_em_map[norm_p] != clean_em:
+                                    print(f"  [WARNING] Project Code en double dans 'Project-EM' : '{norm_p}' avec EM Name different ('{self.project_em_map[norm_p]}' vs '{clean_em}'). Conservation de la premiere valeur.")
+                            else:
+                                self.project_em_map[norm_p] = clean_em
+                    print(f"  Projets avec EM charges : {len(self.project_em_map)}")
+                else:
+                    print("  [WARNING] Impossible de detecter les colonnes 'Project Code' et 'EM Name' dans le sheet 'Project-EM'.")
+            else:
+                print("  [INFO] Aucun sheet 'Project-EM' trouve dans le fichier Forecast.")
+
             print("=" * 70 + "\n")
 
         finally:
@@ -1087,9 +1137,13 @@ class ICBPipeline:
             if not consultants_list and cc["totals"]["working_days"] == 0 and cc["totals"]["bill_amount"] == 0 and cc["totals"]["forecast_bill_amount"] == 0:
                 continue
 
+            norm_proj = ExpenditureItem._normalize_key(cc_proj)
+            em_name = getattr(self, "project_em_map", {}).get(norm_proj, "")
+
             result.append({
                 "cc_project_number": cc_proj,
                 "project_name": cc["project_name"],
+                "em_name": em_name,
                 "consultants": consultants_list,
                 "totals": {k: round(v, 2) for k, v in cc["totals"].items()},
             })
