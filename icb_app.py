@@ -1223,13 +1223,13 @@ class ICBPipeline:
                             # Working days comparison: strict equality
                             wd_icb = round(cons['working_days'], 2)
                             wd_fc = round(fd['working_days'], 2)
-                            if wd_icb and wd_fc and wd_icb != wd_fc:
+                            if wd_icb != wd_fc:
                                 details_wd.append(f"{label} : ICB = {wd_icb} D / Forecast = {wd_fc} D")
 
                             # NCR comparison: uses dynamic tolerance
                             ncr_icb = round(cons['ncr'], 2)
                             ncr_fc = round(fd['ncr'], 2)
-                            if ncr_icb and ncr_fc and abs(ncr_icb - ncr_fc) > gap_tolerance:
+                            if abs(ncr_icb - ncr_fc) > gap_tolerance:
                                 details_ncr.append(f"{label} : ICB = {ncr_icb} / Forecast = {ncr_fc}")
 
                             # Cost comparison
@@ -1244,14 +1244,13 @@ class ICBPipeline:
                             parts.append(f"Gap due to working days:\n{_limit_list(details_wd)}")
                         if details_ncr:
                             parts.append(f"Gap due to rate (NCR):\n{_limit_list(details_ncr)}")
+                        if details_ba:
+                            details_ba.sort(key=lambda x: x[0], reverse=True)
+                            entries = [f"{x[1]} : ICB = {x[2]} / Forecast = {x[3]}" for x in details_ba]
+                            parts.append(f"Cost issue:\n{_limit_list(entries)}")
 
                         if not parts:
-                            if details_ba:
-                                details_ba.sort(key=lambda x: x[0], reverse=True)
-                                entries = [f"{x[1]} : ICB = {x[2]} / Forecast = {x[3]}" for x in details_ba]
-                                parts.append(f"Cost issue:\n{_limit_list(entries)}")
-                            else:
-                                parts.append("Cost issue (requires manual verification)")
+                            parts.append("Cost issue (requires manual verification)")
 
                         comment = "\n\n".join(parts)
 
