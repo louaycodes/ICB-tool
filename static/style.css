@@ -826,38 +826,50 @@ body {
     justify-content: space-between;
     align-items: center;
     gap: 8px;
-    transition: background var(--transition-fast);
+    transition: background var(--transition);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: #1a202c !important;
 }
 
 .em-dropdown-item:hover {
-    background: var(--color-surface-hover);
-    color: #fff;
+    background: #edf2f7;
+    color: #1a202c !important;
 }
 
 .em-dropdown-item.active {
-    background: rgba(45, 212, 191, 0.15);
-    color: var(--color-accent);
-    font-weight: 600;
+    background: #e2e8f0;
+    color: #1a202c !important;
+    font-weight: 700;
+}
+
+.em-dropdown-item.active:hover {
+    background: #cbd5e1;
+    color: #1a202c !important;
 }
 
 .em-dropdown-item .em-count {
     font-size: 0.75rem;
-    color: var(--color-text-dim);
+    color: #718096;
     font-weight: normal;
 }
 
 .em-dropdown-item.active .em-count {
-    color: var(--color-accent);
+    color: #1a202c !important;
+    font-weight: 600;
 }
 
 .em-dropdown-item.em-unassigned {
     font-style: italic;
-    color: var(--color-text-dim);
+    color: #718096;
     border-top: 1px solid var(--color-border);
     margin-top: 2px;
+}
+
+.em-dropdown-item.em-unassigned:hover,
+.em-dropdown-item.em-unassigned.active {
+    color: #1a202c !important;
 }
 
 .em-cell {

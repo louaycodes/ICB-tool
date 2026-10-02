@@ -1333,9 +1333,10 @@ class ICBPipeline:
                             comment = "Cost issue (requires manual verification)"
 
                     gap_formula = f"={icb_col_letter}{current_row}-{fc_col_letter}{current_row}"
+                    em_lead_val = cc.get("em_name") or getattr(self, "project_em_map", {}).get(norm_proj, "")
 
                     value_map = {
-                        "em_lead": "",
+                        "em_lead": em_lead_val,
                         "project_name": cc['project_name'] or "",
                         "cc_project_number": cc['cc_project_number'],
                         "working_days": cc['totals']['working_days'],

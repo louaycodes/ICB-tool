@@ -76,17 +76,16 @@
             <div class="table-scroll" id="table-scroll">
                 <table class="h-table" id="main-table">
                     <thead>
-                        <tr>
-                            <th rowspan="2" style="min-width:280px" class="col-group-right">Projet</th>
                             <th rowspan="2" class="col-group-right col-em-name" style="min-width:140px; position:relative;">
                                 <div class="em-header-wrapper">
-                                    <span>EM Name</span>
-                                    <button type="button" class="em-filter-btn" id="em-filter-btn" onclick="toggleEmDropdown(event)" title="Filtrer par EM Name">&#9660;</button>
+                                    <span>EM Lead</span>
+                                    <button type="button" class="em-filter-btn" id="em-filter-btn" onclick="toggleEmDropdown(event)" title="Filtrer par EM Lead">&#9660;</button>
                                 </div>
                                 <div class="em-dropdown" id="em-dropdown" style="display:none;" onclick="event.stopPropagation()">
                                     <div class="em-dropdown-list" id="em-dropdown-list"></div>
                                 </div>
                             </th>
+                            <th rowspan="2" style="min-width:280px" class="col-group-right">Projet</th>
                             <th rowspan="2" class="col-group-right">ID Consultant</th>
                             <th rowspan="2" class="col-group-right">Nom complet</th>
                             <th rowspan="2" class="col-group-right">Grade</th>
@@ -385,8 +384,8 @@ function renderHierarchy(ccProjects) {
         // Compute Cost gap (signed value)
         const ccCostGapVal = (cc.totals.forecast_working_days > 0) ? (cc.totals.bill_amount - cc.totals.forecast_bill_amount) : null;
         ccRow.innerHTML =
-            '<td class="col-group-right"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
             '<td class="col-group-right em-cell" title="' + esc(cc.em_name || '') + '">' + esc(cc.em_name || '') + '</td>' +
+            '<td class="col-group-right"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
             '<td colspan="3" class="col-group-right"></td>' +
             '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
             '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
@@ -425,8 +424,8 @@ function renderHierarchy(ccProjects) {
                 sourceBadge = '<span class="source-badge badge-fc" title="Present in Forecast only — no matching ICB entry">FC</span>';
             }
             consRow.innerHTML =
-                '<td class="label-indent-1">' + sourceBadge + '</td>' +
                 '<td class="col-group-right"></td>' +
+                '<td class="label-indent-1 col-group-right">' + sourceBadge + '</td>' +
                 '<td>' + esc(cons.employee_id) + '</td>' +
                 '<td>' + esc(cons.name) + '</td>' +
                 '<td>' + esc(cons.grade) + '</td>' +
@@ -450,8 +449,8 @@ function renderHierarchy(ccProjects) {
         totRow.dataset.emName = cc.em_name || "";
         // Reuse ccCostGapVal (signed) computed above for totals
         totRow.innerHTML =
-            '<td class="label-indent-1"></td>' +
             '<td class="col-group-right"></td>' +
+            '<td class="label-indent-1 col-group-right"></td>' +
             '<td colspan="3">TOTAL ' + esc(cc.cc_project_number) + '</td>' +
             '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
             '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
@@ -630,7 +629,7 @@ function populateEmDropdown(ccProjects) {
             filterBtn.title = "Filtré par: " + (selectedEmFilter === "UNASSIGNED" ? "(Non assigné)" : selectedEmFilter);
         } else {
             filterBtn.classList.remove("active");
-            filterBtn.title = "Filtrer par EM Name";
+            filterBtn.title = "Filtrer par EM Lead";
         }
     }
 
@@ -806,7 +805,7 @@ async function resetApp() {
     const emBtn = document.getElementById("em-filter-btn");
     if (emBtn) {
         emBtn.classList.remove("active");
-        emBtn.title = "Filtrer par EM Name";
+        emBtn.title = "Filtrer par EM Lead";
     }
 
     // Reset UI
