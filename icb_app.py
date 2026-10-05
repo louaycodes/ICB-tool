@@ -261,7 +261,7 @@ class ICBPipeline:
         self.available_months = []
         self.forecast_data = {}  # (cc_proj, emp, month_key) -> {"ncr": float, "working_days": float, "bill_amount": float}
         self.forecast_names = {}  # (norm_proj, norm_ggid) -> employee_name (from forecast file)
-        self.project_em_map = {}  # norm_proj -> em_name (from Project-EM sheet)
+        self.project_em_map = {}  # norm_proj -> em_name (from EDM sheet)
 
     def load(self, path):
         # Load the "ICB_DB" sheet with dynamic header detection
@@ -397,8 +397,8 @@ class ICBPipeline:
         header_cells = {}       # col_0idx -> str value (stripped)
 
         for sname in wb.sheetnames:
-            # Explicitly exclude the Project-EM sheet from the main sheet search
-            if sname.strip().lower() == "project-em":
+            # Explicitly exclude the EDM sheet from the main sheet search
+            if sname.strip().lower() in ("edm", "project-em"):
                 continue
 
             candidate_ws = wb[sname]
@@ -798,53 +798,130 @@ class ICBPipeline:
                 f"{cells_filled} cells filled"
             )
             # =============================================================
-            # 7. READING THE "Project-EM" SHEET
+            # 7. READING THE "EDM" SHEET
             # =============================================================
-            print("\n--- 7. READING THE 'Project-EM' SHEET ---")
-            em_sheet = None
+            print("\n--- 7. READING THE 'EDM' SHEET ---")
+            edm_sheet = None
             for sname in wb.sheetnames:
-                if sname.strip().lower() == "project-em":
-                    em_sheet = wb[sname]
+                if sname.strip().lower() == "edm":
+                    edm_sheet = wb[sname]
                     break
 
             self.project_em_map = {}
-            if em_sheet is not None:
-                print(f"  Sheet 'Project-EM' detected: '{em_sheet.title}'")
-                col_em_proj = None
-                col_em_name = None
-                em_header_row = None
+            if edm_sheet is not None:
+                from openpyxl.utils import get_column_letter
 
-                for r in range(1, min(em_sheet.max_row + 1, 15)):
-                    row_vals = [em_sheet.cell(r, c).value for c in range(1, min(em_sheet.max_column + 1, 50))]
-                    for c_idx, val in enumerate(row_vals):
+                print(f"  Sheet 'EDM' detected: '{edm_sheet.title}'")
+
+                # 7a. Scan the first 20 rows to detect the header row containing
+                #     "Engagement Manager" (or typo) and at least one "Project Num"
+                edm_header_row = None
+                for r in range(1, min((edm_sheet.max_row or 1) + 1, 21)):
+                    row_vals = [
+                        edm_sheet.cell(r, c).value
+                        for c in range(1, min((edm_sheet.max_column or 1) + 1, 50))
+                    ]
+                    has_em = False
+                    has_proj = False
+                    for val in row_vals:
                         if val and isinstance(val, str):
-                            v_clean = val.strip().lower()
-                            if v_clean in ("project code", "project num", "project number", "code projet"):
-                                col_em_proj = c_idx + 1
-                            elif v_clean in ("em name", "em_name", "em", "nom em", "engagement manager"):
-                                col_em_name = c_idx + 1
-                    if col_em_proj and col_em_name:
-                        em_header_row = r
+                            vc = val.strip().lower()
+                            if vc in ("engagement manager", "engagemenet manager"):
+                                has_em = True
+                            elif vc in ("project num", "project number"):
+                                has_proj = True
+                    if has_em and has_proj:
+                        edm_header_row = r
                         break
 
-                if em_header_row is not None:
-                    print(f"  Project-EM headers found at row {em_header_row} (Col Project Code: {col_em_proj}, Col EM Name: {col_em_name})")
-                    for r in range(em_header_row + 1, em_sheet.max_row + 1):
-                        p_val = em_sheet.cell(r, col_em_proj).value
-                        em_val = em_sheet.cell(r, col_em_name).value
-                        if p_val is not None and str(p_val).strip():
-                            norm_p = ExpenditureItem._normalize_key(p_val)
-                            clean_em = str(em_val).strip() if em_val is not None else ""
-                            if norm_p in self.project_em_map:
-                                if clean_em and self.project_em_map[norm_p] != clean_em:
-                                    print(f"  [WARNING] Duplicate Project Code in 'Project-EM': '{norm_p}' with different EM Name ('{self.project_em_map[norm_p]}' vs '{clean_em}'). Keeping first value.")
-                            else:
-                                self.project_em_map[norm_p] = clean_em
-                    print(f"  Projects with EM loaded: {len(self.project_em_map)}")
+                if edm_header_row is not None:
+                    # 7b. Detect columns in the header row
+                    proj_num_cols = []
+                    em_cols = []
+                    for c in range(1, min((edm_sheet.max_column or 1) + 1, 50)):
+                        val = edm_sheet.cell(edm_header_row, c).value
+                        if val and isinstance(val, str):
+                            vc = val.strip().lower()
+                            if vc in ("project num", "project number"):
+                                proj_num_cols.append(c)
+                            elif vc in ("engagement manager", "engagemenet manager"):
+                                em_cols.append(c)
+
+                    # Project Num: must use column C (1-indexed 3).
+                    # Among "Project Num" columns, take the second occurrence (the right one).
+                    # If only 1 occurrence or second is not column C, fallback to column C with [WARNING].
+                    col_proj = None
+                    if len(proj_num_cols) >= 2:
+                        second_col = proj_num_cols[1]
+                        if second_col == 3:
+                            col_proj = 3
+                        else:
+                            print(f"  [WARNING] [EDM] Second 'Project Num' column found at column {get_column_letter(second_col)} instead of C. Using column C by position.")
+                            col_proj = 3
+                    elif len(proj_num_cols) == 1:
+                        if proj_num_cols[0] == 3:
+                            col_proj = 3
+                        else:
+                            print(f"  [WARNING] [EDM] Only one 'Project Num' column found (column {get_column_letter(proj_num_cols[0])}). Using column C by position.")
+                            col_proj = 3
+                    else:
+                        print("  [WARNING] [EDM] No 'Project Num' column found by name. Using column C by position.")
+                        col_proj = 3
+
+                    # Never retain column A (1) for joining
+                    if col_proj == 1:
+                        print("  [WARNING] [EDM] Column A detected for Project Num — overriding to column C.")
+                        col_proj = 3
+
+                    # Engagement Manager: column E (1-indexed 5).
+                    # Detected by name with typo tolerance; fallback to column E with [WARNING].
+                    col_em = None
+                    if em_cols:
+                        col_em = em_cols[0]
+                    else:
+                        print("  [WARNING] [EDM] 'Engagement Manager' column not found by name. Using column E by position.")
+                        col_em = 5
+
+                    col_proj_letter = get_column_letter(col_proj)
+                    col_em_letter = get_column_letter(col_em)
+                    print(f"  [EDM] Project Num = column {col_proj_letter}, Engagement Manager = column {col_em_letter}, column A ignored")
+
+                    # 7c. Read rows
+                    distinct_edm_projects = set()
+                    for r in range(edm_header_row + 1, (edm_sheet.max_row or edm_header_row) + 1):
+                        p_val = edm_sheet.cell(r, col_proj).value
+                        em_val = edm_sheet.cell(r, col_em).value
+                        if p_val is None or em_val is None:
+                            continue
+                        p_str = str(p_val).strip()
+                        em_str = str(em_val).strip()
+                        if not p_str or not em_str:
+                            continue
+
+                        norm_p = ExpenditureItem._normalize_key(p_str)
+                        if not norm_p:
+                            continue
+
+                        distinct_edm_projects.add(norm_p)
+
+                        if norm_p in self.project_em_map:
+                            existing_em = self.project_em_map[norm_p]
+                            if existing_em.lower() != em_str.lower():
+                                print(f"  [WARNING] Duplicate Project Code in 'EDM': '{norm_p}' with different EM ('{existing_em}' vs '{em_str}'). Keeping first value.")
+                        else:
+                            self.project_em_map[norm_p] = em_str
+
+                    # 7d. Diagnostic logs
+                    loaded_projects = icb_projects | projects_found
+                    matched_edm = distinct_edm_projects & loaded_projects
+                    unmatched_edm = distinct_edm_projects - loaded_projects
+
+                    print(f"  Distinct EDM projects                       : {len(distinct_edm_projects)}")
+                    print(f"  EDM projects matched with loaded projects   : {len(matched_edm)}")
+                    print(f"  EDM projects without match                  : {len(unmatched_edm)}")
+                    print(f"  Projects with EM loaded                     : {len(self.project_em_map)}")
                 else:
-                    print("  [WARNING] Unable to detect 'Project Code' and 'EM Name' columns in the 'Project-EM' sheet.")
-            else:
-                print("  [INFO] No 'Project-EM' sheet found in the Forecast file.")
+                    print("  [ERROR] [EDM] Unable to detect header row containing 'Engagement Manager' and 'Project Num' in the first 20 rows of 'EDM'.")
 
             print("=" * 70 + "\n")
 
