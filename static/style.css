@@ -742,7 +742,8 @@ body {
     cursor: pointer;
 }
 
-.modal-checkbox-label input[type="checkbox"] {
+.modal-checkbox-label input[type="checkbox"],
+.modal-checkbox-label input[type="radio"] {
     width: 17px;
     height: 17px;
     accent-color: var(--color-accent);

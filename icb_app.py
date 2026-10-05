@@ -1258,6 +1258,80 @@ class ICBPipeline:
             })
         return result
 
+    def _generate_gap_comment(
+        self,
+        cc,
+        norm_proj,
+        month,
+        forecast_ba_total,
+        has_any_forecast,
+        gap_tolerance=2.0,
+    ):
+        """Generate automatic explanatory comment for gaps on a project."""
+        comment = ""
+        icb_ba = cc['totals']['bill_amount']
+        gap_val = round(icb_ba - forecast_ba_total, 2) if has_any_forecast else 0
+
+        if not (has_any_forecast and abs(gap_val) > gap_tolerance):
+            return ""
+
+        icb_emps = {}
+        for cons in cc['consultants']:
+            ne = str(cons['employee_id']).strip().replace("6427_", "")
+            icb_emps[ne] = cons
+
+        def _id_name(ne):
+            name = icb_emps[ne].get('name')
+            if not name:
+                name = self.forecast_names.get((norm_proj, ne))
+            if name:
+                name_str = str(name).strip()
+                if name_str.startswith("(") and name_str.endswith(")"):
+                    name_str = name_str[1:-1].strip()
+                return f"{ne} ({name_str})"
+            return f"{ne}" if ne else "(Unknown)"
+
+        consultant_blocks = []
+
+        for ne in sorted(icb_emps.keys()):
+            cons = icb_emps[ne]
+            fk = (norm_proj, ne, month)
+            fd = self.forecast_data.get(fk)
+            if not fd:
+                continue
+
+            gaps = []
+
+            # Working days comparison: strict equality
+            wd_icb = round(cons['working_days'], 2)
+            wd_fc = round(fd['working_days'], 2)
+            if wd_icb != wd_fc:
+                gaps.append(f"Gap due to working days: ICB={wd_icb} D/Forecast={wd_fc} D")
+
+            # NCR comparison: uses dynamic tolerance
+            ncr_icb = round(cons['ncr'], 2)
+            ncr_fc = round(fd['ncr'], 2)
+            if abs(ncr_icb - ncr_fc) > gap_tolerance:
+                gaps.append(f"Gap due to rate (NCR): ICB={ncr_icb}/Forecast={ncr_fc}")
+
+            # Cost comparison: uses dynamic tolerance
+            ba_icb = round(cons['total_bill_amount'], 2)
+            ba_fc = round(fd['bill_amount'], 2)
+            if abs(ba_icb - ba_fc) > gap_tolerance:
+                gaps.append(f"Cost issue: ICB={ba_icb}/Forecast={ba_fc}")
+
+            if gaps:
+                label = _id_name(ne)
+                block = f"{label}:\n" + "\n".join(gaps)
+                consultant_blocks.append(block)
+
+        if consultant_blocks:
+            comment = "\n\n".join(consultant_blocks)
+        else:
+            comment = "Cost issue (requires manual verification)"
+
+        return comment
+
     def export_to_excel(
         self,
         month_filter,
@@ -1350,64 +1424,10 @@ class ICBPipeline:
 
                     # --- Generated comment (English templates) ---
                     comment = ""
-                    icb_ba = cc['totals']['bill_amount']
-                    gap_val = round(icb_ba - forecast_ba_total, 2) if has_any_forecast else 0
-
-                    if include_comments and has_any_forecast and abs(gap_val) > gap_tolerance:
-                        icb_emps = {}
-                        for cons in cc['consultants']:
-                            ne = str(cons['employee_id']).strip().replace("6427_", "")
-                            icb_emps[ne] = cons
-
-                        def _id_name(ne):
-                            name = icb_emps[ne].get('name')
-                            if not name:
-                                name = self.forecast_names.get((norm_proj, ne))
-                            if name:
-                                name_str = str(name).strip()
-                                if name_str.startswith("(") and name_str.endswith(")"):
-                                    name_str = name_str[1:-1].strip()
-                                return f"{ne} ({name_str})"
-                            return f"{ne}" if ne else "(Unknown)"
-
-                        consultant_blocks = []
-
-                        for ne in sorted(icb_emps.keys()):
-                            cons = icb_emps[ne]
-                            fk = (norm_proj, ne, month)
-                            fd = self.forecast_data.get(fk)
-                            if not fd:
-                                continue
-
-                            gaps = []
-
-                            # Working days comparison: strict equality
-                            wd_icb = round(cons['working_days'], 2)
-                            wd_fc = round(fd['working_days'], 2)
-                            if wd_icb != wd_fc:
-                                gaps.append(f"Gap due to working days: ICB={wd_icb} D/Forecast={wd_fc} D")
-
-                            # NCR comparison: uses dynamic tolerance
-                            ncr_icb = round(cons['ncr'], 2)
-                            ncr_fc = round(fd['ncr'], 2)
-                            if abs(ncr_icb - ncr_fc) > gap_tolerance:
-                                gaps.append(f"Gap due to rate (NCR): ICB={ncr_icb}/Forecast={ncr_fc}")
-
-                            # Cost comparison: uses dynamic tolerance
-                            ba_icb = round(cons['total_bill_amount'], 2)
-                            ba_fc = round(fd['bill_amount'], 2)
-                            if abs(ba_icb - ba_fc) > gap_tolerance:
-                                gaps.append(f"Cost issue: ICB={ba_icb}/Forecast={ba_fc}")
-
-                            if gaps:
-                                label = _id_name(ne)
-                                block = f"{label}:\n" + "\n".join(gaps)
-                                consultant_blocks.append(block)
-
-                        if consultant_blocks:
-                            comment = "\n\n".join(consultant_blocks)
-                        else:
-                            comment = "Cost issue (requires manual verification)"
+                    if include_comments:
+                        comment = self._generate_gap_comment(
+                            cc, norm_proj, month, forecast_ba_total, has_any_forecast, gap_tolerance
+                        )
 
                     gap_formula = f"={icb_col_letter}{current_row}-{fc_col_letter}{current_row}"
                     em_lead_val = cc.get("em_name") or getattr(self, "project_em_map", {}).get(norm_proj, "")
@@ -1470,6 +1490,100 @@ class ICBPipeline:
 
         buffer = io.BytesIO()
         wb.save(buffer)
+        buffer.seek(0)
+        return buffer
+
+    def export_to_csv(
+        self,
+        month_filter,
+        start_date,
+        end_date,
+        gap_tolerance=2.0,
+        include_comments=True,
+        include_working_days=False,
+        include_raw_cost=False,
+        include_controlling_comments=True,
+    ):
+        import io
+        import csv
+
+        items_in_range = self._get_items(month_filter=month_filter, start_date=start_date, end_date=end_date)
+        months_in_range = sorted(list(set(i.month_key for i in items_in_range)))
+
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=',', quoting=csv.QUOTE_MINIMAL)
+
+        col_specs = [
+            ("month", "Month"),
+            ("em_lead", "EM_Lead"),
+            ("project_name", "Project Name"),
+            ("cc_project_number", "CC Project Number"),
+        ]
+        if include_working_days:
+            col_specs.append(("working_days", "Working Days"))
+
+        col_specs.append(("icb_tp", "ICB Transfer Price"))
+        col_specs.append(("forecast_tp", "Forecast Transfer Price"))
+        col_specs.append(("gap", "Gap"))
+
+        if include_raw_cost:
+            col_specs.append(("raw_cost", "Raw Cost"))
+
+        col_specs.append(("issue_type", "Issue Type"))
+
+        if include_comments:
+            col_specs.append(("generated_comment", "Generated comment"))
+
+        if include_controlling_comments:
+            col_specs.append(("controlling_comment", "Controlling comment"))
+
+        headers = [spec[1] for spec in col_specs]
+        writer.writerow(headers)
+
+        for month in months_in_range:
+            data = self.hierarchy_data(month_filter=month, start_date=start_date, end_date=end_date)
+            for cc in data:
+                norm_proj = ExpenditureItem._normalize_key(cc['cc_project_number'])
+
+                has_any_forecast = False
+                forecast_ba_total = 0.0
+                for fk, fd in self.forecast_data.items():
+                    if fk[0] == norm_proj and fk[2] == month:
+                        if abs(fd.get("working_days", 0)) > 1e-6 or abs(fd.get("bill_amount", 0)) > 1e-6:
+                            has_any_forecast = True
+                            forecast_ba_total += fd["bill_amount"]
+
+                forecast_cell_value = round(forecast_ba_total, 2) if has_any_forecast else ""
+
+                comment = ""
+                if include_comments:
+                    comment = self._generate_gap_comment(
+                        cc, norm_proj, month, forecast_ba_total, has_any_forecast, gap_tolerance
+                    )
+
+                em_lead_val = cc.get("em_name") or getattr(self, "project_em_map", {}).get(norm_proj, "")
+                icb_ba = cc['totals']['bill_amount']
+                gap_val = round(icb_ba - forecast_ba_total, 2) if has_any_forecast else ""
+
+                value_map = {
+                    "month": month,
+                    "em_lead": em_lead_val,
+                    "project_name": cc['project_name'] or "",
+                    "cc_project_number": cc['cc_project_number'],
+                    "working_days": cc['totals']['working_days'],
+                    "icb_tp": icb_ba,
+                    "forecast_tp": forecast_cell_value,
+                    "gap": gap_val,
+                    "raw_cost": cc['totals']['raw_cost'],
+                    "issue_type": "",
+                    "generated_comment": comment if include_comments else "",
+                    "controlling_comment": "",
+                }
+                row_data = [value_map[spec[0]] for spec in col_specs]
+                writer.writerow(row_data)
+
+        csv_bytes = output.getvalue().encode("utf-8-sig")
+        buffer = io.BytesIO(csv_bytes)
         buffer.seek(0)
         return buffer
 
@@ -2118,33 +2232,53 @@ def export_excel():
     except ValueError:
         gap_tolerance = 2.0
     
+    export_format = request.args.get("format", "xlsx").lower().strip()
+    if export_format not in ("csv", "xlsx"):
+        export_format = "xlsx"
+
     # Whether to include optional columns
     include_working_days = request.args.get("include_working_days", "0") in ("1", "true", "yes")
     include_raw_cost = request.args.get("include_raw_cost", "0") in ("1", "true", "yes")
     include_comments = request.args.get("include_comments", "1") in ("1", "true", "yes")
     include_controlling_comments = request.args.get("include_controlling_comments", "1") in ("1", "true", "yes")
     
+    ext = "csv" if export_format == "csv" else "xlsx"
+
     try:
-        buffer = pipeline.export_to_excel(
-            month_filter=month,
-            start_date=start_date,
-            end_date=end_date,
-            gap_tolerance=gap_tolerance,
-            include_comments=include_comments,
-            include_working_days=include_working_days,
-            include_raw_cost=include_raw_cost,
-            include_controlling_comments=include_controlling_comments,
-        )
+        if export_format == "csv":
+            buffer = pipeline.export_to_csv(
+                month_filter=month,
+                start_date=start_date,
+                end_date=end_date,
+                gap_tolerance=gap_tolerance,
+                include_comments=include_comments,
+                include_working_days=include_working_days,
+                include_raw_cost=include_raw_cost,
+                include_controlling_comments=include_controlling_comments,
+            )
+        else:
+            buffer = pipeline.export_to_excel(
+                month_filter=month,
+                start_date=start_date,
+                end_date=end_date,
+                gap_tolerance=gap_tolerance,
+                include_comments=include_comments,
+                include_working_days=include_working_days,
+                include_raw_cost=include_raw_cost,
+                include_controlling_comments=include_controlling_comments,
+            )
         
         import os
         if start_date and end_date:
-            filename = f"icb_{start_date}_{end_date}.xlsx"
+            filename = f"icb_{start_date}_{end_date}.{ext}"
         elif month:
-            filename = f"icb_{month}.xlsx"
+            filename = f"icb_{month}.{ext}"
         else:
-            filename = "icb_export.xlsx"
+            filename = f"icb_export.{ext}"
         filepath = None
         
+        file_filters = ('CSV Files (*.csv)', 'All Files (*.*)') if export_format == "csv" else ('Excel Files (*.xlsx)', 'All Files (*.*)')
+
         try:
             import webview
             if webview.windows:
@@ -2152,7 +2286,7 @@ def export_excel():
                 result = window.create_file_dialog(
                     webview.FileDialog.SAVE,
                     save_filename=filename,
-                    file_types=('Excel Files (*.xlsx)',)
+                    file_types=file_filters
                 )
                 if result and isinstance(result, (tuple, list)) and len(result) > 0:
                     filepath = result[0]
@@ -2167,13 +2301,15 @@ def export_excel():
             # Build the desktop path as fallback
             desktop = os.path.join(os.path.expanduser("~"), "Desktop")
             filepath = os.path.join(desktop, filename)
+        elif not filepath.lower().endswith(f".{ext}"):
+            filepath = f"{filepath}.{ext}"
         
         with open(filepath, "wb") as f:
             f.write(buffer.getvalue())
             
         return jsonify({
             "success": True,
-            "message": "Export successful",
+            "message": f"{export_format.upper()} export successful",
             "path": filepath
         })
     except Exception as e:
