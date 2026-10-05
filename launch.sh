@@ -1,36 +1,36 @@
 #!/bin/bash
 # ============================================================
-# ICB Desktop — Script de lancement rapide
-# Double-cliquez sur ce fichier ou executez : ./launch.sh
+# ICB Desktop — Quick launch script
+# Double-click this file or run: ./launch.sh
 # ============================================================
 
 set -e
 
-# Repertoire du script (meme si lance depuis ailleurs)
+# Script directory (even if launched from elsewhere)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "==========================================="
-echo "  ICB Analysis — Lancement Desktop"
+echo "  ICB Analysis — Desktop Launch"
 echo "==========================================="
 echo ""
 
-# 1. Creer le venv s'il n'existe pas
+# 1. Create the venv if it doesn't exist
 if [ ! -d "venv" ]; then
-    echo "[1/3] Creation de l'environnement virtuel..."
+    echo "[1/3] Creating virtual environment..."
     python3 -m venv venv
 else
-    echo "[1/3] Environnement virtuel existant detecte."
+    echo "[1/3] Existing virtual environment detected."
 fi
 
-# 2. Activer le venv
+# 2. Activate the venv
 source venv/bin/activate
 
-# 3. Installer les dependances
-echo "[2/3] Verification des dependances..."
+# 3. Install dependencies
+echo "[2/3] Checking dependencies..."
 pip install -q -r requirements.txt
 
-# 4. Lancer l'application desktop
-echo "[3/3] Lancement de l'application..."
+# 4. Launch the desktop application
+echo "[3/3] Launching the application..."
 echo ""
 python3 icb_desktop.py

@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ICB - Analyse des depenses consultants</title>
-    <meta name="description" content="Application ICB Capgemini - Analyse des depenses et facturation des consultants intercompany.">
+    <title>ICB - Consultant Expense Analysis</title>
+    <meta name="description" content="ICB Capgemini Application - Intercompany consultant expense and billing analysis.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -17,31 +17,31 @@
         <span class="header__title">ICB Analysis</span>
         <div class="header__separator"></div>
         <button class="btn btn--upload" id="btn-upload" onclick="document.getElementById('file-input').click()">
-            Charger un fichier ICB
+            Load ICB File
         </button>
         <button class="btn btn--export" id="btn-export" onclick="showExportModal()" style="display:none;">
-            Exporter (Excel)
+            Export (Excel)
         </button>
         <button class="btn btn--upload" id="btn-upload-forecast" onclick="document.getElementById('forecast-input').click()" style="display:none; background-color: var(--color-accent-light);">
-            Importer Forecast
+            Import Forecast
         </button>
         <button class="btn btn--close" id="btn-reset" onclick="resetApp()" style="display:none;">
-            Décharger
+            Unload
         </button>
         <input type="file" id="file-input" accept=".xlsx" onchange="uploadFile(this)">
         <input type="file" id="forecast-input" accept=".xlsx" onchange="uploadForecast(this)" style="display:none;">
         <div class="header__search" id="search-wrapper" style="display:none;">
             <svg class="header__search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" class="header__search-input" id="search-input" placeholder="Rechercher (nom, ID, projet...)" oninput="applySearch(this.value)">
+            <input type="text" class="header__search-input" id="search-input" placeholder="Search (name, ID, project...)" oninput="applySearch(this.value)">
         </div>
-        <span class="header__status" id="status-text">Aucun fichier charge</span>
+        <span class="header__status" id="status-text">No file loaded</span>
     </header>
 
     <!-- Loading overlay -->
     <div class="loading-overlay" id="loading-overlay">
         <div class="loading-box">
             <div class="spinner"></div>
-            <div>Chargement du fichier en cours...</div>
+            <div>Loading file...</div>
         </div>
     </div>
 
@@ -52,23 +52,23 @@
             <div class="empty-state__icon">
                 <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
             </div>
-            <div class="empty-state__text">Aucun fichier ICB charge</div>
-            <div class="empty-state__hint">Cliquez sur "Charger un fichier ICB" pour commencer l'analyse.</div>
+            <div class="empty-state__text">No ICB file loaded</div>
+            <div class="empty-state__hint">Click "Load ICB File" to start the analysis.</div>
         </div>
 
         <!-- Global Date Filter -->
         <div class="global-filters" id="global-filters" style="display:none;">
-            <label>Du : <input type="date" id="global-start" onchange="applyGlobalDateFilter()"></label>
-            <label>Au : <input type="date" id="global-end" onchange="applyGlobalDateFilter()"></label>
+            <label>From: <input type="date" id="global-start" onchange="applyGlobalDateFilter()"></label>
+            <label>To: <input type="date" id="global-end" onchange="applyGlobalDateFilter()"></label>
             <label style="margin-left: 20px;">
-                Tolerance Ecart (Montant/NCR) : 
+                Gap Tolerance (Amount/NCR): 
                 <input type="number" step="0.1" id="gap-tolerance-input" value="2" style="width: 60px;" onchange="updateGapTolerance()">
             </label>
         </div>
 
         <!-- Month bar (always visible above the table) -->
         <div class="month-bar" id="month-bar">
-            <span class="month-bar__label">Periode :</span>
+            <span class="month-bar__label">Period:</span>
         </div>
 
         <!-- Hierarchy table -->
@@ -76,18 +76,16 @@
             <div class="table-scroll" id="table-scroll">
                 <table class="h-table" id="main-table">
                     <thead>
-                            <th rowspan="2" class="col-group-right col-em-name" style="min-width:140px; position:relative;">
+                        <tr>
+                            <th rowspan="2" class="col-group-right col-em-name" style="min-width:140px;">
                                 <div class="em-header-wrapper">
                                     <span>EM Lead</span>
-                                    <button type="button" class="em-filter-btn" id="em-filter-btn" onclick="toggleEmDropdown(event)" title="Filtrer par EM Lead">&#9660;</button>
-                                </div>
-                                <div class="em-dropdown" id="em-dropdown" style="display:none;" onclick="event.stopPropagation()">
-                                    <div class="em-dropdown-list" id="em-dropdown-list"></div>
+                                    <button type="button" class="em-filter-btn" id="em-filter-btn" onclick="toggleEmDropdown(event)" title="Filter by EM Lead">&#9660;</button>
                                 </div>
                             </th>
-                            <th rowspan="2" style="min-width:280px" class="col-group-right">Projet</th>
-                            <th rowspan="2" class="col-group-right">ID Consultant</th>
-                            <th rowspan="2" class="col-group-right">Nom complet</th>
+                            <th rowspan="2" style="min-width:280px" class="col-group-right">Project</th>
+                            <th rowspan="2" class="col-group-right">Consultant ID</th>
+                            <th rowspan="2" class="col-group-right">Full Name</th>
                             <th rowspan="2" class="col-group-right">Grade</th>
                             <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">NCR</th>
                             <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Working Days</th>
@@ -105,6 +103,10 @@
                     </thead>
                     <tbody id="table-body"></tbody>
                 </table>
+            </div>
+            <!-- EM Dropdown Filter Menu (Fixed positioning) -->
+            <div class="em-dropdown" id="em-dropdown" style="display:none;" onclick="event.stopPropagation()">
+                <div class="em-dropdown-list" id="em-dropdown-list"></div>
             </div>
         </div>
 
@@ -148,7 +150,7 @@
    ===================================================================== */
 
 // -- State --
-let currentMonth = null;       // null = tous les mois
+let currentMonth = null;       // null = all months
 let availableMonths = [];
 let selectedConsRow = null;     // row element currently selected
 let globalStart = null;
@@ -184,14 +186,14 @@ async function uploadFile(input) {
         const resp = await fetch("/api/upload", { method: "POST", body: formData });
         const data = await resp.json();
         if (!resp.ok) {
-            alert(data.error || "Erreur lors du chargement.");
+            alert(data.error || "Error during file loading.");
             return;
         }
 
         // update status
         const status = document.getElementById("status-text");
-        status.textContent = data.total_lines.toLocaleString() + " lignes lues — " +
-                             data.filtered_lines.toLocaleString() + " apres filtrage";
+        status.textContent = data.total_lines.toLocaleString() + " lines read — " +
+                             data.filtered_lines.toLocaleString() + " after filtering";
         status.classList.add("header__status--loaded");
 
         availableMonths = data.available_months;
@@ -206,23 +208,23 @@ async function uploadFile(input) {
         document.getElementById("month-bar").classList.add("visible");
         document.getElementById("btn-export").style.display = "inline-block";
         
-        // Cacher le bouton ICB car on ne permet pas de recharger par dessus
+        // Hide ICB button since reloading on top is not allowed
         document.getElementById("btn-upload").style.display = "none";
         
-        // Afficher le bouton forecast apres avoir upload l'ICB
+        // Show forecast button after ICB upload
         document.getElementById("btn-upload-forecast").style.display = "inline-block";
         document.getElementById("btn-reset").style.display = "inline-flex";
         document.getElementById("search-wrapper").style.display = "flex";
         document.getElementById("search-input").value = "";
         
-        document.getElementById("status-text").textContent = `Fichier actif: ${file.name} (${data.filtered_lines} lignes)`;
+        document.getElementById("status-text").textContent = `Active file: ${file.name} (${data.filtered_lines} lines)`;
         document.getElementById("status-text").classList.add("header__status--loaded");
         closeAllInlineDetails();
     } catch (e) {
-        alert("Erreur reseau : " + e.message);
+        alert("Network error: " + e.message);
     } finally {
         document.getElementById("loading-overlay").classList.remove("active");
-        input.value = "";  // reset input so same file can be re-uploaded
+        input.value = "";  // Reset input so same file can be re-uploaded
     }
 }
 
@@ -233,7 +235,7 @@ async function uploadForecast(input) {
     formData.append("file", file);
 
     const overlay = document.getElementById("loading-overlay");
-    overlay.querySelector("div").textContent = "Chargement du Forecast en cours...";
+    overlay.querySelector("div").textContent = "Loading Forecast file...";
     overlay.classList.add("active");
 
     try {
@@ -243,18 +245,18 @@ async function uploadForecast(input) {
         });
         const data = await res.json();
         if (!res.ok) {
-            alert(data.error || "Erreur lors du chargement Forecast");
+            alert(data.error || "Error during Forecast loading");
         } else {
-            // Cache definitivement le bouton d'import forecast
+            // Permanently hide the forecast import button
             document.getElementById("btn-upload-forecast").style.display = "none";
-            // Recharge la hierarchie pour afficher les nouvelles colonnes
+            // Reload hierarchy to display new columns
             await loadHierarchy();
         }
     } catch (err) {
-        alert("Erreur de connexion.");
+        alert("Connection error.");
     } finally {
         overlay.classList.remove("active");
-        overlay.querySelector("div").textContent = "Chargement du fichier en cours...";
+        overlay.querySelector("div").textContent = "Loading file...";
         input.value = "";
     }
 }
@@ -267,15 +269,15 @@ function buildMonthBar() {
         bar.removeChild(bar.lastChild);
     }
 
-    // "Tous" button
+    // "All" button
     const allBtn = document.createElement("button");
     allBtn.className = "month-btn active";
-    allBtn.textContent = "Tous";
+    allBtn.textContent = "All";
     allBtn.onclick = () => selectMonth(null);
     allBtn.dataset.month = "all";
     bar.appendChild(allBtn);
 
-    // individual months
+    // Individual months
     availableMonths.forEach(mk => {
         const btn = document.createElement("button");
         btn.className = "month-btn";
@@ -361,7 +363,7 @@ function renderHierarchy(ccProjects) {
 
     if (!ccProjects || ccProjects.length === 0) {
         const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="12" style="text-align:center;padding:32px;color:#718096;">Aucune donnee pour cette periode.</td>';
+        tr.innerHTML = '<td colspan="12" style="text-align:center;padding:32px;color:#718096;">No data for this period.</td>';
         tbody.appendChild(tr);
         populateEmDropdown(ccProjects);
         return;
@@ -524,10 +526,10 @@ async function toggleDetail(rowEl) {
 
     let html = '<div class="inline-detail">';
     html += '<div class="inline-detail__header">';
-    html += '<span>Transactions de ' + esc(name) + ' (' + esc(empId) + ') sur ' + esc(ccProject) + '</span>';
+    html += '<span>Transactions for ' + esc(name) + ' (' + esc(empId) + ') on ' + esc(ccProject) + '</span>';
     html += '</div>';
     html += '<table class="detail-table"><thead><tr>';
-    html += '<th>ID Transaction</th><th>Date</th><th>Type depense</th><th>Facture</th>';
+    html += '<th>Transaction ID</th><th>Date</th><th>Expenditure Type</th><th>Invoice</th>';
     html += '<th class="num">Working Days</th><th class="num">NCR</th>';
     html += '<th class="num">Raw Cost</th><th class="num">Transfer Price</th>';
     html += '</tr></thead><tbody>';
@@ -566,9 +568,19 @@ function closeAllInlineDetails() {
 function toggleEmDropdown(e) {
     if (e) e.stopPropagation();
     const dropdown = document.getElementById("em-dropdown");
-    if (!dropdown) return;
+    const btn = document.getElementById("em-filter-btn");
+    if (!dropdown || !btn) return;
+
     const isShown = dropdown.style.display !== "none";
-    dropdown.style.display = isShown ? "none" : "block";
+    if (isShown) {
+        dropdown.style.display = "none";
+    } else {
+        const th = btn.closest("th") || btn;
+        const rect = th.getBoundingClientRect();
+        dropdown.style.top = (rect.bottom + 2) + "px";
+        dropdown.style.left = rect.left + "px";
+        dropdown.style.display = "block";
+    }
 }
 
 function closeEmDropdown() {
@@ -577,11 +589,22 @@ function closeEmDropdown() {
 }
 
 document.addEventListener("click", (e) => {
-    const wrapper = document.querySelector(".col-em-name");
-    if (wrapper && !wrapper.contains(e.target)) {
-        closeEmDropdown();
+    const dropdown = document.getElementById("em-dropdown");
+    const btn = document.getElementById("em-filter-btn");
+    if (dropdown && dropdown.style.display !== "none") {
+        if (!dropdown.contains(e.target) && (!btn || !btn.contains(e.target))) {
+            closeEmDropdown();
+        }
     }
 });
+
+// Close dropdown on table scroll or window scroll/resize
+window.addEventListener("scroll", closeEmDropdown, { passive: true });
+window.addEventListener("resize", closeEmDropdown, { passive: true });
+const tableScrollEl = document.getElementById("table-scroll");
+if (tableScrollEl) {
+    tableScrollEl.addEventListener("scroll", closeEmDropdown, { passive: true });
+}
 
 function selectEmFilter(emValue) {
     selectedEmFilter = emValue;
@@ -598,7 +621,7 @@ function populateEmDropdown(ccProjects) {
     listEl.innerHTML = "";
 
     if (!ccProjects || ccProjects.length === 0) {
-        listEl.innerHTML = '<div class="em-dropdown-item" style="color:var(--color-text-dim);">Aucun EM</div>';
+        listEl.innerHTML = '<div class="em-dropdown-item" style="color:var(--color-text-dim);">No EM</div>';
         return;
     }
 
@@ -626,21 +649,21 @@ function populateEmDropdown(ccProjects) {
     if (filterBtn) {
         if (selectedEmFilter !== "ALL") {
             filterBtn.classList.add("active");
-            filterBtn.title = "Filtré par: " + (selectedEmFilter === "UNASSIGNED" ? "(Non assigné)" : selectedEmFilter);
+            filterBtn.title = "Filtered by: " + (selectedEmFilter === "UNASSIGNED" ? "(Unassigned)" : selectedEmFilter);
         } else {
             filterBtn.classList.remove("active");
-            filterBtn.title = "Filtrer par EM Lead";
+            filterBtn.title = "Filter by EM Lead";
         }
     }
 
-    // Item: "Tous"
+    // Item: "All"
     const allItem = document.createElement("div");
     allItem.className = "em-dropdown-item" + (selectedEmFilter === "ALL" ? " active" : "");
-    allItem.innerHTML = `<span>Tous</span><span class="em-count">${totalProjects}</span>`;
+    allItem.innerHTML = `<span>All</span><span class="em-count">${totalProjects}</span>`;
     allItem.onclick = () => selectEmFilter("ALL");
     listEl.appendChild(allItem);
 
-    // Items: EM Names
+    // Items: EM names
     sortedEms.forEach(em => {
         const item = document.createElement("div");
         item.className = "em-dropdown-item" + (selectedEmFilter === em ? " active" : "");
@@ -649,11 +672,11 @@ function populateEmDropdown(ccProjects) {
         listEl.appendChild(item);
     });
 
-    // Item: "(Non assigné)" if applicable
+    // Item: "(Unassigned)" if applicable
     if (unassignedCount > 0) {
         const unassignedItem = document.createElement("div");
         unassignedItem.className = "em-dropdown-item em-unassigned" + (selectedEmFilter === "UNASSIGNED" ? " active" : "");
-        unassignedItem.innerHTML = `<span>(Non assigné)</span><span class="em-count">${unassignedCount}</span>`;
+        unassignedItem.innerHTML = `<span>(Unassigned)</span><span class="em-count">${unassignedCount}</span>`;
         unassignedItem.onclick = () => selectEmFilter("UNASSIGNED");
         listEl.appendChild(unassignedItem);
     }
@@ -775,16 +798,16 @@ function submitExport() {
         .then(res => res.json())
         .then(data => {
             if (data.error) {
-                alert("Erreur lors de l'exportation : " + data.error);
+                alert("Export error: " + data.error);
             } else {
-                alert(`${data.message}\nChemin : ${data.path}`);
+                alert(`${data.message}\nPath: ${data.path}`);
             }
         })
         .catch(err => {
-            alert("Erreur réseau : " + err);
+            alert("Network error: " + err);
         });
 }
-// -- Reset / Décharger --
+// -- Reset / Unload --
 async function resetApp() {
     try {
         await fetch("/api/reset", { method: "POST" });
@@ -805,7 +828,7 @@ async function resetApp() {
     const emBtn = document.getElementById("em-filter-btn");
     if (emBtn) {
         emBtn.classList.remove("active");
-        emBtn.title = "Filtrer par EM Lead";
+        emBtn.title = "Filter by EM Lead";
     }
 
     // Reset UI
@@ -822,15 +845,15 @@ async function resetApp() {
     document.getElementById("global-start").value = "";
     document.getElementById("global-end").value = "";
 
-    // Re-show upload button
+    // Re-show the upload button
     document.getElementById("btn-upload").style.display = "inline-flex";
 
     // Reset status
     const status = document.getElementById("status-text");
-    status.textContent = "Aucun fichier charge";
+    status.textContent = "No file loaded";
     status.classList.remove("header__status--loaded");
 
-    // Clear file inputs
+    // Clear the file inputs
     document.getElementById("file-input").value = "";
     document.getElementById("forecast-input").value = "";
 }

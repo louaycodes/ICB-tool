@@ -1,5 +1,5 @@
 """
-ICB Desktop — Lance l'application ICB dans une fenêtre native.
+ICB Desktop — Launches the ICB application in a native window.
 """
 
 import threading
@@ -12,7 +12,7 @@ import subprocess
 PORT = 5050
 
 def port_is_open(port, host="127.0.0.1", timeout=0.5):
-    """Vérifie si le serveur Flask est prêt."""
+    """Check if the Flask server is ready."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(timeout)
         try:
@@ -22,7 +22,7 @@ def port_is_open(port, host="127.0.0.1", timeout=0.5):
             return False
 
 def free_port(port):
-    """Libère le port de façon cross-platform (Windows & macOS/Linux)."""
+    """Free the port in a cross-platform way (Windows & macOS/Linux)."""
     if not port_is_open(port):
         return
     try:
@@ -40,28 +40,28 @@ def free_port(port):
         pass
 
 def main():
-    # --- 0. Libérer le port s'il est déjà occupé ---
+    # --- 0. Free the port if already in use ---
     free_port(PORT)
 
-    # --- 1. Démarrer le serveur Flask en arrière-plan ---
+    # --- 1. Start the Flask server in the background ---
     from icb_app import start_server
 
     server_thread = threading.Thread(target=start_server, args=(PORT,), daemon=True)
     server_thread.start()
 
-    # Attendre que le serveur soit prêt (max 15 secondes)
-    print("Démarrage du serveur ICB...")
+    # Wait for the server to be ready (max 15 seconds)
+    print("Starting ICB server...")
     for _ in range(30):
         if port_is_open(PORT):
             break
         time.sleep(0.5)
     else:
-        print("ERREUR : Le serveur Flask n'a pas démarré à temps.")
+        print("ERROR: Flask server did not start in time.")
         sys.exit(1)
 
-    print(f"Serveur prêt sur le port {PORT}.")
+    print(f"Server ready on port {PORT}.")
 
-    # --- 2. Ouvrir la fenêtre desktop native ---
+    # --- 2. Open the native desktop window ---
     import webview
 
     webview.create_window(
@@ -75,7 +75,7 @@ def main():
     )
 
     webview.start()
-    print("Fenêtre fermée. Arrêt de l'application.")
+    print("Window closed. Stopping the application.")
 
 if __name__ == "__main__":
     main()

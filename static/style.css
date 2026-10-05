@@ -1,5 +1,5 @@
 /* ========================================================================
-   ICB App — Styles professionnels
+   ICB App — Professional styles
    ======================================================================== */
 
 /* --- Reset & base --- */
@@ -305,7 +305,7 @@ body {
 }
 
 .h-table thead tr.sub-header-row th {
-    top: 39px; /* decale la deuxieme ligne sous la premiere lors du scroll */
+    top: 39px; /* offsets the second row below the first during scroll */
     padding-top: 8px;
     padding-bottom: 8px;
 }
@@ -415,7 +415,7 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
-/* ICB vs FORECAST gap highlight — rouge vif + texte blanc */
+/* ICB vs FORECAST gap highlight — bright red + white text */
 .h-table td.cell-gap {
     background: #dc2626 !important;
     color: #fff !important;
@@ -759,7 +759,7 @@ body {
 
 /* --- EM Name Column & Dropdown Filter --- */
 .col-em-name {
-    position: relative;
+    z-index: 20;
     user-select: none;
 }
 
@@ -796,9 +796,7 @@ body {
 }
 
 .em-dropdown {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
+    position: fixed;
     min-width: 190px;
     max-width: 280px;
     max-height: 280px;

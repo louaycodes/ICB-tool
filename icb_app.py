@@ -1,7 +1,7 @@
 """
-Application ICB - Capgemini
-Backend Flask : charge le fichier Excel, filtre, groupe, et expose les donnees
-via des endpoints JSON pour l'interface web.
+ICB Application - Capgemini
+Flask backend: loads the Excel file, filters, groups, and exposes data
+via JSON endpoints for the web interface.
 """
 
 import os
@@ -16,22 +16,22 @@ from flask import Flask, request, jsonify, render_template
 from openpyxl import load_workbook
 
 def get_resource_path(relative_path):
-    """ Obtient le chemin absolu vers la ressource, fonctionne en dev et pour PyInstaller """
+    """ Get the absolute path to the resource, works in dev and with PyInstaller """
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath("."), relative_path)
 
-# Initialisation de Flask avec les chemins gérés par PyInstaller
+# Flask initialization with paths managed by PyInstaller
 app = Flask(
     __name__,
     template_folder=get_resource_path('templates'),
     static_folder=get_resource_path('static')
 )
 
-# Si vous accédez au dossier uploads dans votre code, utilisez aussi :
+# If you access the uploads folder in your code, also use:
 UPLOAD_FOLDER = get_resource_path('uploads')
 
-# --- Parametres metier ---
+# --- Business parameters ---
 EXPENDITURE_TYPES = [
     "RC_Time Std",
     "RC_Overtime Std Cost",
@@ -41,40 +41,40 @@ EXPENDITURE_TYPES = [
 ]
 UOM_FILTER = "HOURS"
 NCR_CORRELATION_TARGET = 0.75
-NCR_CORRELATION_TOLERANCE = 0.05  # valide si abs(correlation) dans [0.70, 0.80]
+NCR_CORRELATION_TOLERANCE = 0.05  # valid if abs(correlation) in [0.70, 0.80]
 
-# Les seuils de tolerance sont desormais envoyes dynamiquement depuis le frontend.
+# Tolerance thresholds are now sent dynamically from the frontend.
 
 # --- Flask app ---
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 50 Mo max pour l'upload
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB max for upload
 
-# stockage en memoire du pipeline (une seule session)
+# In-memory storage for the pipeline (single session)
 pipeline = None
 
 
 # ---------------------------------------------------------------------------
-# Lecture rapide de gros fichiers Excel
+# Fast loading of large Excel files
 # ---------------------------------------------------------------------------
 def fast_load_excel(path, sheet_name=0, dynamic_header=False):
-    """Charge un fichier Excel en DataFrame.
+    """Load an Excel file into a DataFrame.
 
-    Si *dynamic_header* est True, la fonction scanne les 20 premieres lignes
-    pour trouver celle contenant les en-tetes attendus (meme logique que le
-    chargement Forecast). Sinon, la ligne 1 est utilisee comme en-tete.
+    If *dynamic_header* is True, the function scans the first 20 rows
+    to find the one containing expected headers (same logic as the
+    Forecast loading). Otherwise, row 1 is used as the header.
 
-    Retourne un DataFrame pandas.
+    Returns a pandas DataFrame.
     """
     wb = load_workbook(path, read_only=True, data_only=True)
 
-    # --- Selection de la feuille ---
+    # --- Sheet selection ---
     if isinstance(sheet_name, str):
         if sheet_name not in wb.sheetnames:
             available = wb.sheetnames
             wb.close()
             raise ValueError(
-                f"Feuille '{sheet_name}' introuvable dans le classeur. "
-                f"Feuilles disponibles : {available}"
+                f"Sheet '{sheet_name}' not found in the workbook. "
+                f"Available sheets: {available}"
             )
         ws = wb[sheet_name]
     else:
@@ -83,8 +83,8 @@ def fast_load_excel(path, sheet_name=0, dynamic_header=False):
     SCAN_MAX_COL = 200
 
     if dynamic_header:
-        # --- Scan dynamique des en-tetes ---
-        # Marqueurs attendus pour identifier la ligne d'en-tetes ICB
+        # --- Dynamic header scan ---
+        # Expected markers to identify the ICB header row
         ICB_HEADER_MARKERS = {
             'employee number', 'cc project number', 'project name',
             'expenditure type', 'quantity',
@@ -92,7 +92,7 @@ def fast_load_excel(path, sheet_name=0, dynamic_header=False):
 
         header_row_idx = None   # 1-indexed
         header_cells = {}       # col_0idx -> str value
-        min_data_col = None     # 0-indexed : premiere colonne non-vide
+        min_data_col = None     # 0-indexed: first non-empty column
 
         for r in range(1, min(ws.max_row + 1 if ws.max_row else 2, 21)):
             row_data = next(ws.iter_rows(min_row=r, max_row=r,
@@ -113,43 +113,43 @@ def fast_load_excel(path, sheet_name=0, dynamic_header=False):
         if header_row_idx is None:
             wb.close()
             raise ValueError(
-                "Impossible de trouver la ligne d'en-tetes dans les 20 "
-                "premieres lignes de la feuille. Marqueurs recherches : "
+                "Unable to find the header row in the first 20 "
+                "rows of the sheet. Searched markers: "
                 + ", ".join(sorted(ICB_HEADER_MARKERS))
             )
 
-        # Determiner la premiere et la derniere colonne contenant un en-tete
+        # Determine the first and last columns containing a header
         col_indices = sorted(header_cells.keys())
         min_data_col = col_indices[0]       # 0-indexed
         max_data_col = col_indices[-1]       # 0-indexed
         ncols = max_data_col - min_data_col + 1
 
-        # Construire le header (peut contenir des None pour des trous)
+        # Build the header (may contain None for gaps)
         header = []
         for ci in range(min_data_col, max_data_col + 1):
             header.append(header_cells.get(ci))
 
-        print(f"[ICB] En-tetes detectes a la ligne {header_row_idx}, "
-              f"colonnes {min_data_col}-{max_data_col} ({ncols} colonnes)")
+        print(f"[ICB] Headers detected at row {header_row_idx}, "
+              f"columns {min_data_col}-{max_data_col} ({ncols} columns)")
 
-        # Lire les donnees a partir de la ligne suivante
+        # Read data starting from the next row
         rows_iter = ws.iter_rows(
             min_row=header_row_idx + 1,
-            min_col=min_data_col + 1,   # 1-indexed pour openpyxl
+            min_col=min_data_col + 1,   # 1-indexed for openpyxl
             max_col=max_data_col + 1,   # 1-indexed
             values_only=True,
         )
         data = [r for r in rows_iter if any(v is not None for v in r)]
 
     else:
-        # --- Mode classique : en-tetes en ligne 1, donnees en col A ---
+        # --- Classic mode: headers on row 1, data in col A ---
         header_row = next(ws.iter_rows(min_row=1, max_row=1, min_col=1,
                                         max_col=SCAN_MAX_COL, values_only=True))
         ncols = max((i for i, v in enumerate(header_row) if v is not None),
                     default=-1) + 1
         if ncols == 0:
             wb.close()
-            raise ValueError("Feuille vide ou en-tete introuvable.")
+            raise ValueError("Empty sheet or header not found.")
         header = list(header_row[:ncols])
         rows_iter = ws.iter_rows(min_row=2, min_col=1, max_col=ncols,
                                   values_only=True)
@@ -173,10 +173,10 @@ def excel_serial_to_date(value):
 
 
 # ---------------------------------------------------------------------------
-# Modele metier
+# Business model
 # ---------------------------------------------------------------------------
 class ExpenditureItem:
-    """Une ligne de depense/facturation."""
+    """An expenditure/billing line item."""
 
     def __init__(self, row: dict):
         def _clean(val):
@@ -202,17 +202,17 @@ class ExpenditureItem:
         self.bill_amount = self._safe_float(_clean(row.get("Project Transfer Price")))
         self.invoice_type = _clean(row.get("Invoice Type"))
         self.date = excel_serial_to_date(_clean(row.get("Expenditure Item Date")))
-        # Colonne de correlation pour la detection d'anomalie
+        # Correlation column for anomaly detection
         raw_corr = _clean(row.get("FULL NCR to Direct NCR Correlation"))
         self.ncr_correlation = self._safe_float(raw_corr)
 
     @property
     def month_key(self):
-        return self.date.strftime("%Y-%m") if self.date else "Inconnu"
+        return self.date.strftime("%Y-%m") if self.date else "Unknown"
 
     @property
     def has_anomaly(self):
-        """True si abs(ncr_correlation) est en dehors de [0.70, 0.80]."""
+        """True if abs(ncr_correlation) is outside [0.70, 0.80]."""
         if self.ncr_correlation is None:
             return False
         val = abs(self.ncr_correlation)
@@ -221,14 +221,14 @@ class ExpenditureItem:
 
     @staticmethod
     def _safe_float(value):
-        """Convertit une valeur en float de maniere securisee.
-        Retourne None si la valeur est None ou non convertible.
-        Gere le cas ou Excel renvoie des nombres sous forme de string."""
+        """Safely converts a value to float.
+        Returns None if the value is None or not convertible.
+        Handles the case where Excel returns numbers as strings."""
         if value is None:
             return None
         if isinstance(value, (int, float)):
             return float(value)
-        # Tenter la conversion depuis une string
+        # Attempt conversion from a string
         try:
             f = float(value)
             if math.isnan(f) or math.isinf(f):
@@ -239,12 +239,12 @@ class ExpenditureItem:
 
     @staticmethod
     def _normalize_key(value):
-        """Force toutes les cles projet/CC-projet en texte propre (evite le
-        melange str/int/None qui fait planter sorted() plus loin)."""
+        """Forces all project/CC-project keys to clean text (avoids
+        str/int/None mixing that breaks sorted() downstream)."""
         if value is None:
             return "N/A"
         if isinstance(value, float) and value.is_integer():
-            return str(int(value))   # 123.0 -> "123", evite les doublons avec "123"
+            return str(int(value))   # 123.0 -> "123", avoids duplicates with "123"
         return str(value).strip()
 
     def matches_filter(self):
@@ -252,7 +252,7 @@ class ExpenditureItem:
 
 
 # ---------------------------------------------------------------------------
-# Pipeline de traitement
+# Processing pipeline
 # ---------------------------------------------------------------------------
 class ICBPipeline:
     def __init__(self):
@@ -264,11 +264,11 @@ class ICBPipeline:
         self.project_em_map = {}  # norm_proj -> em_name (from Project-EM sheet)
 
     def load(self, path):
-        # Charger la feuille "ICB_DB" avec detection dynamique des en-tetes
+        # Load the "ICB_DB" sheet with dynamic header detection
         df_raw = fast_load_excel(path, sheet_name="DB_ICB", dynamic_header=True)
 
-        # --- Detection dynamique de la colonne "Project Transfer Price" ---
-        # Accepte 3 variantes ordonnees de noms possibles :
+        # --- Dynamic detection of the "Project Transfer Price" column ---
+        # Accepts 3 ordered candidate name variants:
         candidate_names = [
             "Project Transfer Price",
             "Project Revenue Price",
@@ -283,36 +283,36 @@ class ICBPipeline:
                     break
             if ptp_col is not None:
                 if candidate != candidate_names[0]:
-                    print(f"[INFO] Colonne alternative '{ptp_col}' detectee "
-                          f"(utilisee a la place de '{candidate_names[0]}')")
+                    print(f"[INFO] Alternative column '{ptp_col}' detected "
+                          f"(used instead of '{candidate_names[0]}')")
                 break
 
         if ptp_col is None:
             names_str = ", ".join(f"'{name}'" for name in candidate_names)
-            print(f"[ERROR] Aucune des colonnes attendues ({names_str}) "
-                  "n'a ete trouvee dans le fichier ICB.")
-            print(f"  Colonnes disponibles : {list(df_raw.columns)}")
+            print(f"[ERROR] None of the expected columns ({names_str}) "
+                  "were found in the ICB file.")
+            print(f"  Available columns: {list(df_raw.columns)}")
         elif str(ptp_col).strip() != "Project Transfer Price":
-            # Renommer vers le nom canonique attendu par ExpenditureItem
+            # Rename to the canonical name expected by ExpenditureItem
             df_raw = df_raw.rename(columns={ptp_col: "Project Transfer Price"})
-            print(f"[INFO] Colonne '{ptp_col}' renommee en 'Project Transfer Price'")
+            print(f"[INFO] Column '{ptp_col}' renamed to 'Project Transfer Price'")
 
         self.items = [ExpenditureItem(row) for row in df_raw.to_dict("records")]
 
     def load_forecast(self, path):
-        """Parse un fichier Forecast et remplit self.forecast_data.
+        """Parse a Forecast file and populate self.forecast_data.
 
-        Detection dynamique de la structure :
-        - Ligne d'en-tetes trouvee par scan des 20 premieres lignes
-        - Colonnes d'identite (Project Num, GGID, …) trouvees par nom
-        - Blocs mensuels localises via les noms de mois (FR/EN) et les
-          sous-colonnes (Grade, F.RC, Vaca, Prod, Cost, FTE)
-        - Blocs Total / TR Q* exclus automatiquement
+        Dynamic structure detection:
+        - Header row found by scanning the first 20 rows
+        - Identity columns (Project Num, GGID, …) found by name
+        - Monthly blocks located via month names (FR/EN) and
+          sub-columns (Grade, F.RC, Vaca, Prod, Cost, FTE)
+        - Total / TR Q* blocks excluded automatically
         """
         import openpyxl
         from datetime import datetime
 
-        # ---- Helpers locaux ----
+        # ---- Local helpers ----
         def _col_letter(idx_0):
             """0-indexed column number -> Excel letter(s)."""
             result = ""
@@ -336,13 +336,13 @@ class ICBPipeline:
             except (ValueError, TypeError):
                 return 0.0
 
-        SCAN_MAX_COL = 200  # ne pas scanner les colonnes fantomes Excel
+        SCAN_MAX_COL = 200  # do not scan phantom Excel columns
 
-        # Marqueurs d'identite attendus dans la ligne d'en-tetes
+        # Expected identity markers in the header row
         IDENTITY_MARKERS = {'project num', 'project name', 'icb id',
                             'employee name', 'grade'}
 
-        # Mapping noms de mois FR + EN -> numero de mois (1-12)
+        # Mapping month names FR + EN -> month number (1-12)
         MONTH_NAMES_MAP = {}
         for _names, _num in [
             (['janvier', 'january', 'jan'], 1),
@@ -361,12 +361,12 @@ class ICBPipeline:
             for _n in _names:
                 MONTH_NAMES_MAP[_n] = _num
 
-        # Noms attendus dans un bloc mensuel (ordre canonique)
+        # Expected names in a monthly block (canonical order)
         EXPECTED_SUB_ORDER = ['grade', 'f.rc', 'vaca', 'prod', 'cost', 'fte']
         SUB_COL_SET = set(EXPECTED_SUB_ORDER)
 
-        # Valeurs parasites : si Project Num == un de ces mots, c'est une
-        # ligne mal identifiee (en-tete duplique, etc.), pas une donnee.
+        # Parasite values: if Project Num == one of these words, it's a
+        # misidentified line (duplicate header, etc.), not data.
         PARASITE_VALUES = (
             IDENTITY_MARKERS
             | set(MONTH_NAMES_MAP.keys())
@@ -375,29 +375,29 @@ class ICBPipeline:
         )
 
         print("\n" + "=" * 70)
-        print("[FORECAST IMPORT] Debut du chargement du fichier Forecast")
+        print("[FORECAST IMPORT] Starting Forecast file loading")
         print("=" * 70)
 
         # =================================================================
-        # Ouverture en mode normal pour la detection de structure
-        # (merged_cells, dimensions, …). Fichiers Forecast = petits,
-        # donc pas de probleme de performance.
+        # Open in normal mode for structure detection
+        # (merged_cells, dimensions, …). Forecast files = small,
+        # so no performance issue.
         # =================================================================
         wb = openpyxl.load_workbook(path, data_only=True)
 
-        print(f"\n  Feuilles presentes dans le classeur : {wb.sheetnames}")
+        print(f"\n  Sheets present in the workbook: {wb.sheetnames}")
 
         # =================================================================
-        # 1. DETECTION DE LA FEUILLE ET LIGNE D'EN-TETES PRINCIPALES
+        # 1. DETECTING THE SHEET AND MAIN HEADER ROW
         # =================================================================
-        print("\n--- 1. DETECTION DE LA FEUILLE ET LIGNE D'EN-TETES PRINCIPALES ---")
+        print("\n--- 1. DETECTING THE SHEET AND MAIN HEADER ROW ---")
 
         ws = None
         header_row_idx = None   # 1-indexed
         header_cells = {}       # col_0idx -> str value (stripped)
 
         for sname in wb.sheetnames:
-            # Exclure explicitement le sheet Project-EM de la recherche du sheet principal
+            # Explicitly exclude the Project-EM sheet from the main sheet search
             if sname.strip().lower() == "project-em":
                 continue
 
@@ -423,23 +423,23 @@ class ICBPipeline:
                 break
 
         if ws is None or header_row_idx is None:
-            print("  [ERROR] Impossible de trouver le sheet principal avec ses en-tetes dans les 20 premieres lignes.")
-            print("  Marqueurs recherches : "
+            print("  [ERROR] Unable to find the main sheet with its headers in the first 20 rows.")
+            print("  Searched markers: "
                   + ", ".join(sorted(IDENTITY_MARKERS)))
-            print("  Import annule (aucune donnee chargee).")
+            print("  Import cancelled (no data loaded).")
             wb.close()
             return
 
         main_sheet_title = ws.title
-        print(f"  Sheet principal detecte : '{main_sheet_title}'")
-        print(f"  Dimensions               : {ws.dimensions}")
-        print(f"  Ligne d'en-tetes trouvee : ligne {header_row_idx}")
-        print(f"  Colonnes avec texte dans cette ligne : {len(header_cells)}")
+        print(f"  Main sheet detected: '{main_sheet_title}'")
+        print(f"  Dimensions          : {ws.dimensions}")
+        print(f"  Header row found    : row {header_row_idx}")
+        print(f"  Columns with text in this row: {len(header_cells)}")
 
         # =================================================================
-        # 2. DETECTION DYNAMIQUE DES COLONNES D'IDENTITE
+        # 2. DYNAMIC DETECTION OF IDENTITY COLUMNS
         # =================================================================
-        print("\n--- 2. DETECTION DES COLONNES D'IDENTITE ---")
+        print("\n--- 2. DETECTING IDENTITY COLUMNS ---")
 
         IDENTITY_LOOKUP = {
             'project num': 'project_num',
@@ -457,10 +457,10 @@ class ICBPipeline:
                 if field not in identity_cols:
                     identity_cols[field] = col_0
 
-        # --- Detection speciale pour ICB ID (peut etre dans une colonne cachee) ---
+        # --- Special detection for ICB ID (may be in a hidden column) ---
         if 'icb_id' not in identity_cols:
-            print("  [INFO] 'ICB ID' non trouvee dans les colonnes visibles, "
-                  "recherche dans les colonnes cachees...")
+            print("  [INFO] 'ICB ID' not found in visible columns, "
+                  "searching in hidden columns...")
             for cell in next(ws.iter_rows(min_row=header_row_idx,
                                           max_row=header_row_idx,
                                           max_col=SCAN_MAX_COL,
@@ -469,7 +469,7 @@ class ICBPipeline:
                     if cell.value.strip().lower() == 'icb id':
                         c0 = cell.column - 1
                         col_letter = _col_letter(c0)
-                        # Verifier si la colonne est cachee
+                        # Check if the column is hidden
                         is_hidden = False
                         try:
                             dim = ws.column_dimensions.get(col_letter)
@@ -478,9 +478,9 @@ class ICBPipeline:
                         except Exception:
                             pass
                         identity_cols['icb_id'] = c0
-                        print(f"  [OK] 'ICB ID' trouvee en colonne {col_letter} "
+                        print(f"  [OK] 'ICB ID' found in column {col_letter} "
                               f"(0-idx {c0})"
-                              f"{' [COLONNE CACHEE]' if is_hidden else ''}")
+                              f"{' [HIDDEN COLUMN]' if is_hidden else ''}")
                         break
 
         col_proj = identity_cols.get('project_num')
@@ -493,25 +493,25 @@ class ICBPipeline:
                            ('ICB ID', col_icb_id),
                            ('Employee Name', col_emp_name)]:
             if idx is not None:
-                print(f"  [OK] '{label}' -> colonne {_col_letter(idx)} "
+                print(f"  [OK] '{label}' -> column {_col_letter(idx)} "
                       f"(0-idx {idx})")
             else:
-                print(f"  [WARNING] '{label}' introuvable dans la ligne "
-                      f"d'en-tetes")
+                print(f"  [WARNING] '{label}' not found in the header "
+                      f"row")
 
         if col_proj is None or col_icb_id is None:
-            print("  [ERROR] Colonnes obligatoires manquantes "
-                  "(Project Num et/ou ICB ID). Import annule.")
+            print("  [ERROR] Required columns missing "
+                  "(Project Num and/or ICB ID). Import cancelled.")
             wb.close()
             return
 
         # =================================================================
-        # 3. DETECTION DYNAMIQUE DES BLOCS MENSUELS
+        # 3. DYNAMIC DETECTION OF MONTHLY BLOCKS
         # =================================================================
-        print("\n--- 3. DETECTION DES BLOCS MENSUELS ---")
+        print("\n--- 3. DETECTING MONTHLY BLOCKS ---")
 
-        # 3a. Scanner les lignes au-dessus du header (et le header lui-meme)
-        #     pour reperer les labels de mois / Total / TR.
+        # 3a. Scan the rows above the header (and the header itself)
+        #     to locate month / Total / TR labels.
         block_labels = {}  # col_0idx -> ('month', num) | ('skip', label_text)
 
         scan_start = max(1, header_row_idx - 5)
@@ -532,21 +532,21 @@ class ICBPipeline:
                 elif val_lower.startswith('tr '):
                     block_labels[c0] = ('skip', val_raw)
 
-        # 3b. Pour chaque label de mois, identifier les sous-colonnes
-        #     (Grade, F.RC, Vaca, Prod, Cost, FTE) dans le header.
+        # 3b. For each month label, identify the sub-columns
+        #     (Grade, F.RC, Vaca, Prod, Cost, FTE) in the header.
         month_blocks = {}  # month_num -> {frc: c0, prod: c0, cost: c0}
 
         for label_col in sorted(block_labels.keys()):
             label_type, label_val = block_labels[label_col]
 
             if label_type == 'skip':
-                print(f"  [SKIP] Bloc '{label_val}' a col "
+                print(f"  [SKIP] Block '{label_val}' at col "
                       f"{_col_letter(label_col)} (Total/TR)")
                 continue
 
             month_num = label_val
 
-            # Verifier les 6 colonnes a partir de label_col dans le header
+            # Check the 6 columns starting at label_col in the header
             sub_cols = {}
             order_ok = True
             for offset, expected in enumerate(EXPECTED_SUB_ORDER):
@@ -558,11 +558,11 @@ class ICBPipeline:
                     order_ok = False
 
             if not order_ok:
-                # Fallback : chercher chaque sous-colonne par nom dans
-                # une plage elargie (label_col .. label_col+7)
-                print(f"  [WARNING] Mois {month_num:02d} "
-                      f"(col {_col_letter(label_col)}) : ordre des "
-                      f"sous-colonnes non standard, recherche par nom")
+                # Fallback: search each sub-column by name in
+                # an expanded range (label_col .. label_col+7)
+                print(f"  [WARNING] Month {month_num:02d} "
+                      f"(col {_col_letter(label_col)}): non-standard "
+                      f"sub-column order, searching by name")
                 sub_cols = {}
                 for c in range(label_col, label_col + 8):
                     name = header_cells.get(c, '').lower()
@@ -577,34 +577,34 @@ class ICBPipeline:
                 missing = [n for n, v in [('F.RC', frc_col),
                                           ('Prod', prod_col),
                                           ('Cost', cost_col)] if v is None]
-                print(f"  [WARNING] Mois {month_num:02d} : colonnes manquantes "
-                      f"{missing} — ce mois sera ignore")
+                print(f"  [WARNING] Month {month_num:02d}: missing columns "
+                      f"{missing} — this month will be skipped")
                 continue
 
             month_blocks[month_num] = {
                 'frc': frc_col, 'prod': prod_col, 'cost': cost_col
             }
-            print(f"  [OK] Mois {month_num:02d} : "
+            print(f"  [OK] Month {month_num:02d} : "
                   f"F.RC=col {_col_letter(frc_col)}, "
                   f"Prod=col {_col_letter(prod_col)}, "
                   f"Cost=col {_col_letter(cost_col)}")
 
         if not month_blocks:
-            print("  [ERROR] Aucun bloc mensuel valide detecte. "
-                  "Import annule.")
+            print("  [ERROR] No valid monthly block detected. "
+                  "Import cancelled.")
             wb.close()
             return
 
-        print(f"  => {len(month_blocks)} bloc(s) mensuel(s) valide(s)")
+        print(f"  => {len(month_blocks)} valid monthly block(s)")
 
         # =================================================================
-        # 4. DETECTION DES BLOCS PROJETS
-        #    Chercher les plages fusionnees dans la colonne Project Num
-        #    detectee dynamiquement, ou fallback par rupture de valeur.
+        # 4. DETECTING PROJECT BLOCKS
+        #    Search for merged ranges in the dynamically detected
+        #    Project Num column, or fallback by value change.
         # =================================================================
-        print("\n--- 4. DETECTION DES BLOCS PROJETS ---")
+        print("\n--- 4. DETECTING PROJECT BLOCKS ---")
 
-        proj_col_1idx = col_proj + 1   # 1-indexed pour l'API merged_cells
+        proj_col_1idx = col_proj + 1   # 1-indexed for the merged_cells API
         icb_id_col_1idx = col_icb_id + 1
         emp_col_1idx = (col_emp_name + 1) if col_emp_name is not None else None
 
@@ -615,8 +615,8 @@ class ICBPipeline:
         )
 
         if merged_ranges:
-            print(f"  {len(merged_ranges)} plage(s) fusionnee(s) en colonne "
-                  f"{_col_letter(col_proj)} :")
+            print(f"  {len(merged_ranges)} merged range(s) in column "
+                  f"{_col_letter(col_proj)}:")
             for mr in merged_ranges:
                 anchor = ws.cell(row=mr.min_row, column=proj_col_1idx).value
                 n_rows = mr.max_row - mr.min_row + 1
@@ -627,15 +627,15 @@ class ICBPipeline:
                 has_total = (tot_icb_id is None
                              and (emp_col_1idx is None or tot_emp is None))
                 print(
-                    f"    Projet '{anchor}' : lignes {mr.min_row}-{mr.max_row} "
+                    f"    Project '{anchor}': rows {mr.min_row}-{mr.max_row} "
                     f"({n_rows} consultants), "
-                    f"ligne Total={tot_row} "
-                    f"{'[detectee et exclue]' if has_total else '[NON detectee — WARNING]'}"
+                    f"Total row={tot_row} "
+                    f"{'[detected and excluded]' if has_total else '[NOT detected — WARNING]'}"
                 )
         else:
-            print(f"  [INFO] Aucune plage fusionnee en colonne "
+            print(f"  [INFO] No merged range in column "
                   f"{_col_letter(col_proj)}.")
-            print("  Fallback : detection par rupture de valeur :")
+            print("  Fallback: detection by value change:")
             proj_groups = {}
             for row_cells in ws.iter_rows(
                     min_row=header_row_idx + 1, min_col=1,
@@ -647,15 +647,15 @@ class ICBPipeline:
                         str(p_val).strip(), []).append(row_cells[0].row)
             if proj_groups:
                 for pv, rows in proj_groups.items():
-                    print(f"    Projet '{pv}' : {len(rows)} consultant(s) "
-                          f"(lignes {rows[0]}-{rows[-1]})")
+                    print(f"    Project '{pv}': {len(rows)} consultant(s) "
+                          f"(rows {rows[0]}-{rows[-1]})")
             else:
-                print("    [WARNING] Aucun Project Num trouve.")
+                print("    [WARNING] No Project Num found.")
 
         wb.close()
 
         # =================================================================
-        # PARSING PRINCIPAL (read_only pour la performance)
+        # MAIN PARSING (read_only for performance)
         # =================================================================
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
         try:
@@ -663,7 +663,7 @@ class ICBPipeline:
             current_year = datetime.now().year
             current_proj = None
 
-            # Compteurs de diagnostic
+            # Diagnostic counters
             projects_found = set()
             consultants_by_project = {}
             rows_processed = 0
@@ -672,7 +672,7 @@ class ICBPipeline:
             data_start_row = header_row_idx + 1
 
             for row in ws.iter_rows(min_row=data_start_row, values_only=True):
-                # Acces securise aux colonnes detectees dynamiquement
+                # Safe access to dynamically detected columns
                 def _safe(idx):
                     if idx is not None and idx < len(row):
                         return row[idx]
@@ -681,15 +681,15 @@ class ICBPipeline:
                 proj_val = _safe(col_proj)
                 icb_id_val = _safe(col_icb_id)
 
-                # Mettre a jour le projet courant
+                # Update current project
                 if proj_val is not None:
-                    # Garde-fou : ignorer les lignes parasites
+                    # Guard: ignore parasite lines
                     pv_lower = str(proj_val).strip().lower()
                     if pv_lower in PARASITE_VALUES:
                         continue
                     current_proj = proj_val
 
-                # Ignorer les lignes Total (ICB ID vide)
+                # Ignore Total lines (ICB ID empty)
                 if icb_id_val is None:
                     rows_skipped += 1
                     continue
@@ -698,7 +698,7 @@ class ICBPipeline:
                 norm_proj = ExpenditureItem._normalize_key(current_proj)
                 norm_icb_id = str(icb_id_val).strip().replace("6427_", "")
 
-                # Stocker le nom du consultant depuis le forecast
+                # Store the consultant name from the forecast
                 emp_name_val = _safe(col_emp_name)
                 if emp_name_val is not None:
                     self.forecast_names[(norm_proj, norm_icb_id)] = str(emp_name_val).strip()
@@ -715,7 +715,7 @@ class ICBPipeline:
                     prod = _to_float(_safe(block['prod']))
                     cost = _to_float(_safe(block['cost']))
 
-                    # Ignorer si toutes les valeurs sont a 0 ou vides
+                    # Skip if all values are 0 or empty
                     if abs(frc) > 1e-6 or abs(prod) > 1e-6 or abs(cost) > 1e-6:
                         self.forecast_data[
                             (norm_proj, norm_icb_id, month_key)
@@ -726,9 +726,9 @@ class ICBPipeline:
                         }
 
             # =============================================================
-            # 5. MAPPING AVEC LE FICHIER ICB
+            # 5. MAPPING WITH THE ICB FILE
             # =============================================================
-            print("\n--- 5. MAPPING AVEC LE FICHIER ICB ---")
+            print("\n--- 5. MAPPING WITH THE ICB FILE ---")
 
             icb_projects = set()
             icb_employees_by_project = {}
@@ -741,16 +741,16 @@ class ICBPipeline:
             matched_projects = projects_found & icb_projects
             unmatched_projects = projects_found - icb_projects
 
-            print(f"  Projets Forecast : {len(projects_found)}")
-            print(f"  Projets ICB      : {len(icb_projects)}")
-            print(f"  Projets matches  : "
+            print(f"  Forecast Projects : {len(projects_found)}")
+            print(f"  ICB Projects      : {len(icb_projects)}")
+            print(f"  Matched Projects  : "
                   f"{len(matched_projects)}/{len(projects_found)}")
             if matched_projects:
                 for p in sorted(matched_projects):
                     print(f"    [MATCH]    {p}")
             if unmatched_projects:
-                print(f"  [WARNING] {len(unmatched_projects)} projet(s) "
-                      f"Forecast NON trouves dans l'ICB :")
+                print(f"  [WARNING] {len(unmatched_projects)} Forecast project(s) "
+                      f"NOT found in ICB:")
                 for p in sorted(unmatched_projects):
                     print(f"    [NO MATCH] {p}")
 
@@ -764,43 +764,43 @@ class ICBPipeline:
                     else:
                         total_unmatched_cons += 1
                         print(
-                            f"  [NO MATCH] Consultant brut='{raw_id}', "
-                            f"normalise='{norm_id}' dans projet "
-                            f"'{proj_norm}' — absent de l'ICB"
+                            f"  [NO MATCH] Consultant raw='{raw_id}', "
+                            f"normalized='{norm_id}' in project "
+                            f"'{proj_norm}' — missing from ICB"
                         )
 
             total_cons = total_matched_cons + total_unmatched_cons
-            print(f"  Consultants matches : "
+            print(f"  Matched Consultants : "
                   f"{total_matched_cons}/{total_cons}")
             if total_unmatched_cons:
                 print(f"  [WARNING] {total_unmatched_cons} consultant(s) "
-                      f"non matches")
+                      f"not matched")
 
             # =============================================================
-            # 6. RESULTAT FINAL
+            # 6. FINAL RESULT
             # =============================================================
             cells_filled = len(self.forecast_data) * 3
 
-            print("\n--- 6. RESULTAT FINAL ---")
-            print(f"  En-tetes detectes    : ligne {header_row_idx}")
-            print(f"  Colonnes identite    : Project Num="
+            print("\n--- 6. FINAL RESULT ---")
+            print(f"  Headers detected     : row {header_row_idx}")
+            print(f"  Identity columns     : Project Num="
                   f"{_col_letter(col_proj)}, ICB ID="
                   f"{_col_letter(col_icb_id)}")
-            print(f"  Blocs mensuels       : {len(month_blocks)}")
-            print(f"  Lignes consultants   : {rows_processed}")
-            print(f"  Lignes ignorees      : {rows_skipped}")
-            print(f"  Entrees forecast     : {len(self.forecast_data)}")
-            print(f"  Cellules remplies    : {cells_filled} "
+            print(f"  Monthly blocks       : {len(month_blocks)}")
+            print(f"  Consultant rows      : {rows_processed}")
+            print(f"  Rows skipped         : {rows_skipped}")
+            print(f"  Forecast entries     : {len(self.forecast_data)}")
+            print(f"  Cells filled         : {cells_filled} "
                   f"(NCR + Working Days + Cost)")
             print(
-                f"\n[FORECAST IMPORT] {len(projects_found)} projets, "
-                f"{total_matched_cons}/{total_cons} consultants matches, "
-                f"{cells_filled} cellules remplies"
+                f"\n[FORECAST IMPORT] {len(projects_found)} projects, "
+                f"{total_matched_cons}/{total_cons} consultants matched, "
+                f"{cells_filled} cells filled"
             )
             # =============================================================
-            # 7. LECTURE DU SHEET "Project-EM"
+            # 7. READING THE "Project-EM" SHEET
             # =============================================================
-            print("\n--- 7. LECTURE DU SHEET 'Project-EM' ---")
+            print("\n--- 7. READING THE 'Project-EM' SHEET ---")
             em_sheet = None
             for sname in wb.sheetnames:
                 if sname.strip().lower() == "project-em":
@@ -809,7 +809,7 @@ class ICBPipeline:
 
             self.project_em_map = {}
             if em_sheet is not None:
-                print(f"  Sheet 'Project-EM' detecte : '{em_sheet.title}'")
+                print(f"  Sheet 'Project-EM' detected: '{em_sheet.title}'")
                 col_em_proj = None
                 col_em_name = None
                 em_header_row = None
@@ -828,7 +828,7 @@ class ICBPipeline:
                         break
 
                 if em_header_row is not None:
-                    print(f"  En-tetes Project-EM trouves a la ligne {em_header_row} (Col Project Code: {col_em_proj}, Col EM Name: {col_em_name})")
+                    print(f"  Project-EM headers found at row {em_header_row} (Col Project Code: {col_em_proj}, Col EM Name: {col_em_name})")
                     for r in range(em_header_row + 1, em_sheet.max_row + 1):
                         p_val = em_sheet.cell(r, col_em_proj).value
                         em_val = em_sheet.cell(r, col_em_name).value
@@ -837,14 +837,14 @@ class ICBPipeline:
                             clean_em = str(em_val).strip() if em_val is not None else ""
                             if norm_p in self.project_em_map:
                                 if clean_em and self.project_em_map[norm_p] != clean_em:
-                                    print(f"  [WARNING] Project Code en double dans 'Project-EM' : '{norm_p}' avec EM Name different ('{self.project_em_map[norm_p]}' vs '{clean_em}'). Conservation de la premiere valeur.")
+                                    print(f"  [WARNING] Duplicate Project Code in 'Project-EM': '{norm_p}' with different EM Name ('{self.project_em_map[norm_p]}' vs '{clean_em}'). Keeping first value.")
                             else:
                                 self.project_em_map[norm_p] = clean_em
-                    print(f"  Projets avec EM charges : {len(self.project_em_map)}")
+                    print(f"  Projects with EM loaded: {len(self.project_em_map)}")
                 else:
-                    print("  [WARNING] Impossible de detecter les colonnes 'Project Code' et 'EM Name' dans le sheet 'Project-EM'.")
+                    print("  [WARNING] Unable to detect 'Project Code' and 'EM Name' columns in the 'Project-EM' sheet.")
             else:
-                print("  [INFO] Aucun sheet 'Project-EM' trouve dans le fichier Forecast.")
+                print("  [INFO] No 'Project-EM' sheet found in the Forecast file.")
 
             print("=" * 70 + "\n")
 
@@ -1037,7 +1037,7 @@ class ICBPipeline:
                 if f_month not in all_active_months:
                     continue
                 if (f_proj, f_emp) not in icb_keys:
-                    # Ignorer les entrees dont les valeurs de travail/cout sont a 0 / vides
+                    # Ignore entries whose work/cost values are 0 / empty
                     if abs(fd.get("working_days", 0)) < 1e-6 and abs(fd.get("bill_amount", 0)) < 1e-6:
                         continue
                     forecast_only.setdefault((f_proj, f_emp), []).append((f_month, fd))
@@ -1055,7 +1055,7 @@ class ICBPipeline:
                     if fd["ncr"] != 0:
                         frc_count += 1
 
-                # Ne pas injecter si toutes les valeurs d'activite sont nulles
+                # Do not inject if all activity values are zero
                 if abs(sum_prod) < 1e-6 and abs(sum_cost) < 1e-6:
                     continue
 
@@ -1108,7 +1108,7 @@ class ICBPipeline:
                 cc_data["totals"]["forecast_working_days"] += sum_prod
                 cc_data["totals"]["forecast_bill_amount"] += sum_cost
 
-            # Recompute average NCR for projects (uniquement sur les consultants actifs)
+            # Recompute average NCR for projects (only on active consultants)
             for cc_proj, cc_data in hierarchy.items():
                 active_cons = [c for c in cc_data["consultants"].values()
                                if not (c["working_days"] == 0 and c["total_bill_amount"] == 0 and c["forecast_working_days"] == 0 and c["forecast_bill_amount"] == 0)]
@@ -1143,7 +1143,7 @@ class ICBPipeline:
                     "source": cons.get("source", "both"),
                 })
 
-            # Si le projet n'a aucun consultant actif et aucune depense ni forecast, ne pas l'afficher
+            # If the project has no active consultant and no expenditure or forecast, do not display it
             if not consultants_list and cc["totals"]["working_days"] == 0 and cc["totals"]["bill_amount"] == 0 and cc["totals"]["forecast_bill_amount"] == 0:
                 continue
 
@@ -1198,12 +1198,12 @@ class ICBPipeline:
         from openpyxl.worksheet.table import Table, TableStyleInfo
         from openpyxl.utils import get_column_letter
 
-        # 1. Obtenir les items dans l'intervalle pour determiner les mois concernes
+        # 1. Get items in the range to determine the months involved
         items_in_range = self._get_items(month_filter=month_filter, start_date=start_date, end_date=end_date)
         months_in_range = sorted(list(set(i.month_key for i in items_in_range)))
 
         wb = Workbook()
-        # Supprimer la feuille par defaut si on va creer des feuilles specifiques
+        # Remove the default sheet if we will create specific sheets
         default_ws = wb.active
 
         # Styles
@@ -1211,8 +1211,8 @@ class ICBPipeline:
         wrap_align = Alignment(wrap_text=True)
 
         if not months_in_range:
-            default_ws.title = "Aucune donnee"
-            default_ws.append(["Aucune donnee dans cet intervalle"])
+            default_ws.title = "No data"
+            default_ws.append(["No data in this range"])
         else:
             for idx, month in enumerate(months_in_range):
                 if idx == 0:
@@ -1260,7 +1260,7 @@ class ICBPipeline:
                 for cc in data:
                     norm_proj = ExpenditureItem._normalize_key(cc['cc_project_number'])
 
-                    # --- Col Forecast Transfer Price ---
+                    # --- Forecast Transfer Price column ---
                     has_any_forecast = False
                     forecast_ba_total = 0.0
                     for fk, fd in self.forecast_data.items():
@@ -1387,7 +1387,7 @@ class ICBPipeline:
                     ws.column_dimensions[get_column_letter(col_idx)].width = spec[2]
 
             # =================================================================
-            # FEUILLE KPI DASHBOARD
+            # KPI DASHBOARD SHEET
             # =================================================================
             self._build_kpi_sheet(wb, months_in_range, start_date, end_date, gap_tolerance)
 
@@ -1397,21 +1397,21 @@ class ICBPipeline:
         return buffer
 
     def _build_kpi_sheet(self, wb, months_in_range, start_date, end_date, gap_tolerance):
-        """Construit la feuille KPI Dashboard dans le workbook d'export.
+        """Build the KPI Dashboard sheet in the export workbook.
         
-        Sections :
-        1. Synthese mensuelle (Cost, Forecast, Gap, WD, Raw Cost, Nb projets, Nb consultants)
-        2. Bill Amount Cumule par mois (progression mois apres mois)
-        3. Synthese par projet (toutes periodes confondues)
-        4. Top consultants par Cost
-        5. Detail consultant par mois
+        Sections:
+        1. Monthly summary (Cost, Forecast, Gap, WD, Raw Cost, Nb projects, Nb consultants)
+        2. Cumulative Bill Amount by month (month-by-month progression)
+        3. Summary by project (all periods combined)
+        4. Top consultants by Cost
+        5. Consultant detail by month
         """
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
         from openpyxl.utils import get_column_letter
 
         ws = wb.create_sheet(title="KPI Dashboard")
 
-        # ---- Styles reutilisables ----
+        # ---- Reusable styles ----
         title_font = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
         section_font = Font(name="Calibri", size=12, bold=True, color="FFFFFF")
         header_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
@@ -1476,7 +1476,7 @@ class ICBPipeline:
                 ws.cell(row=row, column=c).fill = section_fill
                 ws.cell(row=row, column=c).border = thin_border
 
-        # ---- Collecter toutes les donnees par mois ----
+        # ---- Collect all data by month ----
         monthly_stats = {}  # month -> {cost, forecast, gap, wd, raw_cost, nb_proj, nb_cons}
         project_stats = {}  # cc_proj -> {name, cost, forecast, gap, wd, raw_cost, nb_cons, avg_ncr}
         consultant_monthly = {}  # (emp_id, name) -> {month -> {cost, wd, ncr, project}}
@@ -1495,7 +1495,7 @@ class ICBPipeline:
                 norm_proj = ExpenditureItem._normalize_key(cc['cc_project_number'])
                 proj_key = cc['cc_project_number']
 
-                # Forecast pour ce projet/mois
+                # Forecast for this project/month
                 fc_total = 0.0
                 has_fc = False
                 for fk, fd in self.forecast_data.items():
@@ -1510,7 +1510,7 @@ class ICBPipeline:
                 m_raw_cost += cc['totals']['raw_cost']
                 m_nb_cons += len(cc['consultants'])
 
-                # Agreger par projet
+                # Aggregate by project
                 if proj_key not in project_stats:
                     project_stats[proj_key] = {
                         "name": cc['project_name'] or "",
@@ -1531,7 +1531,7 @@ class ICBPipeline:
                         ps["ncr_sum"] += cons['ncr']
                         ps["ncr_count"] += 1
 
-                    # Detail consultant mensuel
+                    # Monthly consultant detail
                     cons_key = (cons['employee_id'], cons['name'] or "")
                     if cons_key not in consultant_monthly:
                         consultant_monthly[cons_key] = {}
@@ -1557,7 +1557,7 @@ class ICBPipeline:
             }
 
         # ================================================================
-        # SECTION 0 : TITRE PRINCIPAL
+        # SECTION 0: MAIN TITLE
         # ================================================================
         row = 1
         title_cell = ws.cell(row=row, column=1, value="KPI DASHBOARD — ICB Analysis")
@@ -1568,9 +1568,9 @@ class ICBPipeline:
         row += 1
         period_label = ""
         if start_date and end_date:
-            period_label = f"Periode : {start_date} a {end_date}"
+            period_label = f"Period: {start_date} to {end_date}"
         elif months_in_range:
-            period_label = f"Mois : {months_in_range[0]} a {months_in_range[-1]}"
+            period_label = f"Months: {months_in_range[0]} to {months_in_range[-1]}"
         sub_cell = ws.cell(row=row, column=1, value=period_label)
         sub_cell.font = Font(name="Calibri", size=10, italic=True, color="8899AA")
         sub_cell.fill = dark_fill
@@ -1579,12 +1579,12 @@ class ICBPipeline:
         row += 2
 
         # ================================================================
-        # SECTION 1 : SYNTHESE MENSUELLE
+        # SECTION 1: MONTHLY SUMMARY
         # ================================================================
-        _write_section_title(ws, row, "1. SYNTHESE MENSUELLE", 8)
+        _write_section_title(ws, row, "1. MONTHLY SUMMARY", 8)
         row += 1
-        headers_s1 = ["Mois", "ICB Transfer Price", "Forecast Transfer Price", "Gap (ICB-Forecast)",
-                       "Working Days", "Raw Cost", "Nb Projets", "Nb Consultants"]
+        headers_s1 = ["Month", "ICB Transfer Price", "Forecast Transfer Price", "Gap (ICB-Forecast)",
+                       "Working Days", "Raw Cost", "Nb Projects", "Nb Consultants"]
         for c, h in enumerate(headers_s1, 1):
             ws.cell(row=row, column=c, value=h)
         _style_header_row(ws, row, 1, len(headers_s1))
@@ -1611,7 +1611,7 @@ class ICBPipeline:
             _style_data_cell(ws, row, 8, fmt=num_fmt_int, align=center_align)
             row += 1
 
-        # Ligne TOTAL
+        # TOTAL row
         ws.cell(row=row, column=1, value="TOTAL")
         _style_data_cell(ws, row, 1, align=center_align,
                          fill=accent_fill)
@@ -1643,13 +1643,13 @@ class ICBPipeline:
         row += 2
 
         # ================================================================
-        # SECTION 2 : TRANSFER PRICE CUMULE PAR MOIS
+        # SECTION 2: CUMULATIVE TRANSFER PRICE BY MONTH
         # ================================================================
-        _write_section_title(ws, row, "2. TRANSFER PRICE CUMULE PAR MOIS (Progression)", 8)
+        _write_section_title(ws, row, "2. CUMULATIVE TRANSFER PRICE BY MONTH (Progression)", 8)
         row += 1
-        headers_s2 = ["Mois", "ICB TP du Mois", "ICB TP Cumule",
-                       "Forecast TP du Mois", "Forecast TP Cumule",
-                       "Gap Cumule", "% Progression TP"]
+        headers_s2 = ["Month", "Monthly ICB TP", "Cumulative ICB TP",
+                       "Monthly Forecast TP", "Cumulative Forecast TP",
+                       "Cumulative Gap", "TP Progression %"]
         for c, h in enumerate(headers_s2, 1):
             ws.cell(row=row, column=c, value=h)
         _style_header_row(ws, row, 1, len(headers_s2))
@@ -1692,19 +1692,19 @@ class ICBPipeline:
         row += 1
 
         # ================================================================
-        # SECTION 3 : SYNTHESE PAR PROJET
+        # SECTION 3: SUMMARY BY PROJECT
         # ================================================================
-        _write_section_title(ws, row, "3. SYNTHESE PAR PROJET (toutes periodes)", 9)
+        _write_section_title(ws, row, "3. SUMMARY BY PROJECT (all periods)", 9)
         row += 1
         headers_s3 = ["CC Project Number", "Project Name", "ICB TP Total",
                        "Forecast TP Total", "Gap", "Gap %",
-                       "Working Days", "NCR Moyen", "Nb Consultants"]
+                       "Working Days", "Avg NCR", "Nb Consultants"]
         for c, h in enumerate(headers_s3, 1):
             ws.cell(row=row, column=c, value=h)
         _style_header_row(ws, row, 1, len(headers_s3))
         row += 1
 
-        # Trier par cost decroissant
+        # Sort by cost descending
         sorted_projects = sorted(project_stats.items(),
                                  key=lambda x: x[1]["cost"], reverse=True)
         for proj_key, ps in sorted_projects:
@@ -1736,7 +1736,7 @@ class ICBPipeline:
             ws.cell(row=row, column=9, value=len(ps["nb_cons"]))
             _style_data_cell(ws, row, 9, fmt=num_fmt_int, align=center_align)
 
-            # Alternance de couleur
+            # Alternating row colors
             if (row % 2) == 0:
                 for c in range(1, 10):
                     if ws.cell(row=row, column=c).fill == PatternFill():
@@ -1747,26 +1747,26 @@ class ICBPipeline:
         row += 1
 
         # ================================================================
-        # SECTION 4 : TOP CONSULTANTS PAR COST
+        # SECTION 4: TOP CONSULTANTS BY COST
         # ================================================================
-        _write_section_title(ws, row, "4. TOP CONSULTANTS PAR TRANSFER PRICE (toutes periodes)", 8)
+        _write_section_title(ws, row, "4. TOP CONSULTANTS BY TRANSFER PRICE (all periods)", 8)
         row += 1
-        headers_s4 = ["Employee ID", "Nom", "Projet Principal",
+        headers_s4 = ["Employee ID", "Name", "Main Project",
                        "ICB TP Total", "Working Days Total",
-                       "NCR", "Nb Mois Actifs", "TP Moyen / Mois"]
+                       "NCR", "Active Months", "Avg TP / Month"]
         for c, h in enumerate(headers_s4, 1):
             ws.cell(row=row, column=c, value=h)
         _style_header_row(ws, row, 1, len(headers_s4))
         row += 1
 
-        # Agreger par consultant
+        # Aggregate by consultant
         cons_totals = []
         for (emp_id, name), months_data in consultant_monthly.items():
             total_cost = sum(md["cost"] for md in months_data.values())
             total_wd = sum(md["wd"] for md in months_data.values())
             ncr_vals = [md["ncr"] for md in months_data.values() if md["ncr"] > 0]
             avg_ncr = round(sum(ncr_vals) / len(ncr_vals), 2) if ncr_vals else 0
-            # Projet le plus frequent
+            # Most frequent project
             proj_counts = {}
             for md in months_data.values():
                 proj_counts[md["project"]] = proj_counts.get(md["project"], 0) + 1
@@ -1781,7 +1781,7 @@ class ICBPipeline:
                 "avg_cost_month": avg_cost_month,
             })
 
-        # Trier par cost decroissant, limiter a 50
+        # Sort by cost descending, limit to 50
         cons_totals.sort(key=lambda x: x["cost"], reverse=True)
         for ct in cons_totals[:50]:
             ws.cell(row=row, column=1, value=ct["emp_id"])
@@ -1810,21 +1810,21 @@ class ICBPipeline:
         row += 1
 
         # ================================================================
-        # SECTION 5 : DETAIL CONSULTANT PAR MOIS
+        # SECTION 5: CONSULTANT DETAIL BY MONTH
         # ================================================================
         _write_section_title(ws, row,
-                             "5. DETAIL CONSULTANT PAR MOIS (TP par consultant par mois)",
+                             "5. CONSULTANT DETAIL BY MONTH (TP per consultant per month)",
                              3 + len(months_in_range))
         row += 1
 
-        # Headers : Employee ID | Nom | Projet | Mois1 | Mois2 | ... | TOTAL
-        headers_s5 = ["Employee ID", "Nom", "Projet"] + months_in_range + ["TOTAL"]
+        # Headers: Employee ID | Name | Project | Month1 | Month2 | ... | TOTAL
+        headers_s5 = ["Employee ID", "Name", "Project"] + months_in_range + ["TOTAL"]
         for c, h in enumerate(headers_s5, 1):
             ws.cell(row=row, column=c, value=h)
         _style_header_row(ws, row, 1, len(headers_s5))
         row += 1
 
-        # Trier par nom
+        # Sort by name
         sorted_cons = sorted(consultant_monthly.items(),
                              key=lambda x: x[0][1].lower() if x[0][1] else x[0][0])
         for (emp_id, name), months_data in sorted_cons:
@@ -1851,7 +1851,7 @@ class ICBPipeline:
                     ws.cell(row=row, column=col, value=0)
                 _style_data_cell(ws, row, col, fmt=num_fmt_money)
 
-            # Colonne TOTAL
+            # TOTAL column
             total_col = 4 + len(months_in_range)
             ws.cell(row=row, column=total_col, value=round(row_total, 2))
             _style_data_cell(ws, row, total_col, fmt=num_fmt_money,
@@ -1865,7 +1865,7 @@ class ICBPipeline:
                         ws.cell(row=row, column=c).fill = light_row_fill
             row += 1
 
-        # ---- Largeurs de colonnes ----
+        # ---- Column widths ----
         ws.column_dimensions['A'].width = 22
         ws.column_dimensions['B'].width = 35
         ws.column_dimensions['C'].width = 22
@@ -1876,12 +1876,12 @@ class ICBPipeline:
         ws.column_dimensions['H'].width = 18
         ws.column_dimensions['I'].width = 18
 
-        # Figer la premiere ligne
+        # Freeze the first row
         ws.freeze_panes = "A2"
 
 
 # ---------------------------------------------------------------------------
-# Routes Flask
+# Flask Routes
 # ---------------------------------------------------------------------------
 @app.route("/")
 def index():
@@ -1892,12 +1892,12 @@ def index():
 def upload_file():
     global pipeline
     if "file" not in request.files:
-        return jsonify({"error": "Aucun fichier envoye."}), 400
+        return jsonify({"error": "No file provided."}), 400
     f = request.files["file"]
     if not f.filename.endswith(".xlsx"):
-        return jsonify({"error": "Le fichier doit etre au format .xlsx"}), 400
+        return jsonify({"error": "File must be in .xlsx format"}), 400
 
-    # sauvegarde temporaire
+    # Temporary save
     upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
     os.makedirs(upload_dir, exist_ok=True)
     path = os.path.join(upload_dir, "current_icb.xlsx")
@@ -1909,7 +1909,7 @@ def upload_file():
         pipe.process()
         pipeline = pipe
     except Exception as exc:
-        return jsonify({"error": f"Erreur lors du chargement : {str(exc)}"}), 500
+        return jsonify({"error": f"Error during loading: {str(exc)}"}), 500
 
     return jsonify({
         "total_lines": len(pipeline.items),
@@ -1920,12 +1920,12 @@ def upload_file():
 @app.route("/api/upload_forecast", methods=["POST"])
 def upload_forecast():
     if "file" not in request.files:
-        return jsonify({"error": "Aucun fichier envoye."}), 400
+        return jsonify({"error": "No file provided."}), 400
     f = request.files["file"]
     if not f.filename.endswith(".xlsx"):
-        return jsonify({"error": "Le fichier doit etre au format .xlsx"}), 400
+        return jsonify({"error": "File must be in .xlsx format"}), 400
 
-    # sauvegarde temporaire
+    # Temporary save
     upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
     os.makedirs(upload_dir, exist_ok=True)
     path = os.path.join(upload_dir, "current_forecast.xlsx")
@@ -1933,18 +1933,18 @@ def upload_forecast():
 
     try:
         pipeline.load_forecast(path)
-        return jsonify({"message": "Fichier Forecast charge avec succes."}), 200
+        return jsonify({"message": "Forecast file loaded successfully."}), 200
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/api/reset", methods=["POST"])
 def reset_data():
-    """Remet l'application a zero : vide le pipeline et supprime les fichiers temporaires."""
+    """Reset the application: clear the pipeline and delete temporary files."""
     global pipeline
     pipeline = None
 
-    # Supprimer les fichiers uploades
+    # Delete uploaded files
     upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
     for fname in ("current_icb.xlsx", "current_forecast.xlsx"):
         fpath = os.path.join(upload_dir, fname)
@@ -1954,14 +1954,14 @@ def reset_data():
             except OSError:
                 pass
 
-    return jsonify({"message": "Donnees dechargees avec succes."})
+    return jsonify({"message": "Data unloaded successfully."})
 
 
 @app.route("/api/hierarchy")
 def get_hierarchy():
     global pipeline
     if pipeline is None:
-        return jsonify({"error": "Aucun fichier charge."}), 400
+        return jsonify({"error": "No file loaded."}), 400
     month = request.args.get("month", None)
     if month == "all" or month == "":
         month = None
@@ -1974,7 +1974,7 @@ def get_hierarchy():
 def get_months():
     global pipeline
     if pipeline is None:
-        return jsonify({"error": "Aucun fichier charge."}), 400
+        return jsonify({"error": "No file loaded."}), 400
     start_date = request.args.get("start_date", None)
     end_date = request.args.get("end_date", None)
     items = pipeline._get_items(start_date=start_date, end_date=end_date)
@@ -1986,7 +1986,7 @@ def get_months():
 def get_transactions():
     global pipeline
     if pipeline is None:
-        return jsonify({"error": "Aucun fichier charge."}), 400
+        return jsonify({"error": "No file loaded."}), 400
     emp = request.args.get("employee")
     cc_proj = request.args.get("cc_project")
     month = request.args.get("month", None)
@@ -1996,7 +1996,7 @@ def get_transactions():
     end_date = request.args.get("end_date", None)
     
     if not emp or not cc_proj:
-        return jsonify({"error": "Parametres employee et cc_project requis."}), 400
+        return jsonify({"error": "Parameters employee and cc_project are required."}), 400
         
     items = pipeline._get_items(month_filter=month, start_date=start_date, end_date=end_date)
     txns = [
@@ -2027,7 +2027,7 @@ def export_excel():
     global pipeline
     import os
     if pipeline is None:
-        return jsonify({"error": "Aucun fichier charge."}), 400
+        return jsonify({"error": "No file loaded."}), 400
     
     month = request.args.get("month", None)
     if month == "all" or month == "":
@@ -2082,7 +2082,7 @@ def export_excel():
                 elif result and isinstance(result, str):
                     filepath = result
                 else:
-                    return jsonify({"error": "Exportation annulée."}), 400
+                    return jsonify({"error": "Export cancelled."}), 400
         except ImportError:
             pass
             
@@ -2096,14 +2096,14 @@ def export_excel():
             
         return jsonify({
             "success": True,
-            "message": "Exportation avec succès",
+            "message": "Export successful",
             "path": filepath
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 def start_server(port=5050):
-    """Lance le serveur Flask (utilise par le wrapper desktop)."""
+    """Start the Flask server (used by the desktop wrapper)."""
     import logging
     log = logging.getLogger("werkzeug")
     log.setLevel(logging.ERROR)
