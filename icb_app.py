@@ -961,19 +961,39 @@ class ICBPipeline:
                 cc_data["consultants"][emp] = {
                     "name": item.full_name,
                     "grade": item.emp_grade,
-                    "ncr": item.bill_rate or 0.0,
+                    "ncr": 0.0,
                     "working_days": 0.0,
                     "total_bill_amount": 0.0,
                     "total_raw_cost": 0.0,
                     "has_anomaly": False,
+                    "has_overtime": False,
                     "forecast_working_days": 0.0,
                     "forecast_bill_amount": 0.0,
                     "forecast_ncr": 0.0,
                     "source": "icb_only",  # will be upgraded to "both" if forecast match found
+                    "_ncr_std_found": False,
                 }
 
             cons = cc_data["consultants"][emp]
-            cons["ncr"] = item.bill_rate or cons["ncr"]
+            etype = (item.expenditure_type or "").strip()
+            if "overtime" in etype.lower():
+                cons["has_overtime"] = True
+
+            # Standard NCR logic: strictly prioritize RC_Time Std
+            if etype == "RC_Time Std" and item.bill_rate:
+                cons["ncr"] = item.bill_rate
+                cons["_ncr_std_found"] = True
+            elif not cons["_ncr_std_found"] and item.bill_rate:
+                # If no RC_Time Std encountered yet, derive standard base rate from overtime multiplier
+                if "x2" in etype:
+                    cons["ncr"] = item.bill_rate / 2.0
+                elif "x1.5" in etype:
+                    cons["ncr"] = item.bill_rate / 1.5
+                elif "x1.25" in etype:
+                    cons["ncr"] = item.bill_rate / 1.25
+                else:
+                    cons["ncr"] = item.bill_rate
+
             cons["working_days"] += (item.quantity or 0) / 8.0
             cons["total_bill_amount"] += item.bill_amount or 0
             cons["total_raw_cost"] += item.raw_cost or 0
@@ -1064,13 +1084,10 @@ class ICBPipeline:
                 cc_data["totals"]["forecast_bill_amount"] += cons["forecast_bill_amount"]
 
             # Average NCR for the project (informational)
-            num_cons = len(cc_data["consultants"])
-            if num_cons > 0:
-                cc_data["totals"]["ncr"] = sum(c["ncr"] for c in cc_data["consultants"].values()) / num_cons
-                cc_data["totals"]["forecast_ncr"] = sum(c["forecast_ncr"] for c in cc_data["consultants"].values()) / num_cons
-            else:
-                cc_data["totals"]["ncr"] = 0.0
-                cc_data["totals"]["forecast_ncr"] = 0.0
+            valid_ncrs = [c["ncr"] for c in cc_data["consultants"].values() if c.get("ncr", 0) > 0]
+            cc_data["totals"]["ncr"] = (sum(valid_ncrs) / len(valid_ncrs)) if valid_ncrs else 0.0
+            valid_fc_ncrs = [c["forecast_ncr"] for c in cc_data["consultants"].values() if c.get("forecast_ncr", 0) > 0]
+            cc_data["totals"]["forecast_ncr"] = (sum(valid_fc_ncrs) / len(valid_fc_ncrs)) if valid_fc_ncrs else 0.0
 
         # ---------------------------------------------------------------
         # UNION STEP: inject forecast-only consultants into the hierarchy
@@ -1168,13 +1185,10 @@ class ICBPipeline:
             for cc_proj, cc_data in hierarchy.items():
                 active_cons = [c for c in cc_data["consultants"].values()
                                if not (c["working_days"] == 0 and c["total_bill_amount"] == 0 and c["forecast_working_days"] == 0 and c["forecast_bill_amount"] == 0)]
-                num_cons = len(active_cons)
-                if num_cons > 0:
-                    cc_data["totals"]["ncr"] = sum(c["ncr"] for c in active_cons) / num_cons
-                    cc_data["totals"]["forecast_ncr"] = sum(c["forecast_ncr"] for c in active_cons) / num_cons
-                else:
-                    cc_data["totals"]["ncr"] = 0.0
-                    cc_data["totals"]["forecast_ncr"] = 0.0
+                valid_ncrs = [c["ncr"] for c in active_cons if c.get("ncr", 0) > 0]
+                cc_data["totals"]["ncr"] = (sum(valid_ncrs) / len(valid_ncrs)) if valid_ncrs else 0.0
+                valid_fc_ncrs = [c["forecast_ncr"] for c in active_cons if c.get("forecast_ncr", 0) > 0]
+                cc_data["totals"]["forecast_ncr"] = (sum(valid_fc_ncrs) / len(valid_fc_ncrs)) if valid_fc_ncrs else 0.0
 
         # Sort and serialize
         result = []
@@ -1192,7 +1206,8 @@ class ICBPipeline:
                     "working_days": round(cons["working_days"], 2),
                     "total_bill_amount": round(cons["total_bill_amount"], 2),
                     "total_raw_cost": round(cons["total_raw_cost"], 2),
-                    "has_anomaly": cons["has_anomaly"],
+                    "has_anomaly": cons.get("has_anomaly", False),
+                    "has_overtime": cons.get("has_overtime", False),
                     "forecast_ncr": round(cons["forecast_ncr"], 2),
                     "forecast_working_days": round(cons["forecast_working_days"], 2),
                     "forecast_bill_amount": round(cons["forecast_bill_amount"], 2),
@@ -1290,7 +1305,7 @@ class ICBPipeline:
             # NCR comparison: uses dynamic tolerance
             ncr_icb = round(cons['ncr'], 2)
             ncr_fc = round(fd['ncr'], 2)
-            if abs(ncr_icb - ncr_fc) > gap_tolerance:
+            if ncr_icb > 0 and ncr_fc > 0 and abs(ncr_icb - ncr_fc) > gap_tolerance:
                 gaps.append(f"Gap due to rate (NCR): ICB={ncr_icb}/Forecast={ncr_fc}")
 
             # Cost comparison: uses dynamic tolerance

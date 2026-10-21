@@ -99,10 +99,11 @@ Classeur Excel à **plusieurs feuilles** :
 
 ### Règles de Calculs Financiers
 * **Working Days** : `Quantity` (heures) / **8**.
-* **NCR (taux journalier)** : `Bill Rate` (horaire) × **8**.
+* **NCR (taux journalier)** : `Bill Rate` (horaire) × **8**, calculé **exclusivement sur les lignes standard `RC_Time Std`** (si un consultant a des heures supplémentaires, ex: x1.5 ou x2, le NCR affiché reste son taux standard et n'est pas faussé par les majorations). Si un consultant a des heures supplémentaires, un drapeau `OT` (badge ambré) est affiché sur sa ligne. La colonne GAP reste nette et numérique.
+* **Working Days & Transfer Price** : la logique reste intacte et cumule l'ensemble des types d'heures (`RC_Time Std` et variantes `RC_Overtime*`).
 * **Raw Cost** : conservé tel quel (colonne `Raw Cost`). **Masqué dans l'UI**, présent dans l'export (optionnel).
 * **Transfer Price (ex-"Bill Amount", puis "Cost")** : source ICB = colonne `Project Transfer Price` (ou variantes). Variables internes inchangées : `bill_amount`, `total_bill_amount`, `forecast_bill_amount`. Seuls les libellés affichés changent.
-* **NCR au niveau projet** (UI) : **moyenne simple** des NCR des consultants (ICB et Forecast séparément), plus une somme.
+* **NCR au niveau projet** (UI) : **moyenne simple** des NCR standards valides (`ncr > 0`) des consultants (ICB et Forecast séparément).
 
 ### Détection des Anomalies (NCR)
 * Basée sur `FULL NCR to Direct NCR Correlation` : cible 0.75, tolérance ± 0.05.

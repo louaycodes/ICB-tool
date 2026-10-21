@@ -426,6 +426,7 @@ function renderHierarchy(ccProjects) {
             let cls = "row-consultant";
             if (idx % 2 === 1) cls += " alt";
             if (cons.has_anomaly) cls += " anomaly";
+            if (cons.has_overtime) cls += " has-overtime";
             consRow.className = cls;
             consRow.style.display = "none";
             consRow.dataset.cc = cc.cc_project_number;
@@ -441,9 +442,14 @@ function renderHierarchy(ccProjects) {
             } else if (cons.source === 'forecast_only') {
                 sourceBadge = '<span class="source-badge badge-fc" title="Present in Forecast only — no matching ICB entry">FC</span>';
             }
+            // Overtime indicator
+            let otBadge = '';
+            if (cons.has_overtime) {
+                otBadge = '<span class="source-badge badge-ot" title="Overtime detected (e.g. x1.25, x1.5, x2)">OT</span>';
+            }
             consRow.innerHTML =
                 '<td class="col-group-right"></td>' +
-                '<td class="label-indent-1 col-group-right">' + sourceBadge + '</td>' +
+                '<td class="label-indent-1 col-group-right">' + sourceBadge + otBadge + '</td>' +
                 '<td>' + esc(cons.employee_id) + '</td>' +
                 '<td>' + esc(cons.name) + '</td>' +
                 '<td>' + esc(cons.grade) + '</td>' +

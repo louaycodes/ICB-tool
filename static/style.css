@@ -399,6 +399,23 @@ body {
     border-bottom-color: #bee3f8;
 }
 
+/* Overtime consultant highlight (subtle warm tint) */
+.row-consultant.has-overtime td {
+    background: #fffbeb;
+}
+
+.row-consultant.has-overtime.alt td {
+    background: #fef8ee;
+}
+
+.row-consultant.has-overtime:hover td {
+    background: #fef3c7;
+}
+
+.row-consultant.has-overtime td:first-child {
+    border-left: 3px solid #f59e0b;
+}
+
 /* totals row */
 .row-totals td {
     background: var(--color-totals-bg);
@@ -703,6 +720,13 @@ body {
     background: #dbeafe;
     color: #1e40af;
     border: 1px solid #3b82f6;
+}
+
+.badge-ot {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #f59e0b;
+    margin-left: 4px;
 }
 
 /* --- Export modal dialog --- */
