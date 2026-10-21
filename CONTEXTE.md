@@ -2,11 +2,27 @@
 
 Ce document centralise tout le contexte métier et technique du projet. Il est conçu pour permettre à un autre agent ou développeur de reprendre facilement le projet et d'en comprendre l'architecture, la logique, et l'historique des fonctionnalités implémentées.
 
+Structure du document :
+1. But du projet
+2. Architecture technique
+3. Modèle sémantique (fichiers d'entrée, règles métier, mappings)
+4. Fonctionnalités actuelles (état courant de l'application)
+5. Historique détaillé des modifications (ce qui a été changé, et pourquoi)
+6. Bugs résolus et leçons
+7. Notes pour le prochain agent / développeur
+8. Points à vérifier et pistes futures
+
 ---
 
 ## 1. But du Projet
-**ICB Analysis Tool** est une application hybride (Desktop/Web) conçue pour aider les équipes FinOps (Capgemini/ICB) à analyser, filtrer et exporter des données de facturation inter-compagnies ("Inter-Company Billing" ou "Expenditures"). 
-Le but est de charger de volumineux fichiers Excel de facturation, d'agréger les données, de détecter d'éventuelles anomalies financières, de les comparer à un fichier Forecast, et de fournir un export structuré.
+**ICB Analysis Tool** est une application hybride (Desktop/Web) conçue pour aider les équipes FinOps (Capgemini/ICB) à analyser, filtrer et exporter des données de facturation inter-compagnies ("Inter-Company Billing" ou "Expenditures").
+
+Le but est de :
+* charger de volumineux fichiers Excel de facturation (ICB) ;
+* agréger les données par projet / consultant ;
+* les comparer à un fichier **Forecast** (prévisionnel), qui est la **source de vérité** ;
+* détecter les écarts (gaps) et les expliquer automatiquement ;
+* fournir un export Excel structuré (avec commentaires d'écart générés et un dashboard KPI).
 
 ---
 
@@ -14,161 +30,300 @@ Le but est de charger de volumineux fichiers Excel de facturation, d'agréger le
 L'application repose sur une architecture simple et légère sans base de données (traitement "In-Memory" pour la session courante) :
 
 * **Backend (Python / Flask)** : `icb_app.py`
-  * Gère le serveur web (port 5050 par défaut).
-  * Traite l'ingestion de fichiers `.xlsx` avec `openpyxl` et `pandas` (pour un chargement rapide).
-  * Gère l'import du fichier Forecast (`/api/upload_forecast`) avec détection dynamique de la structure.
-  * Fournit des API RESTful (`/api/hierarchy`, `/api/transactions`, `/api/months`, `/api/export`, `/api/upload_forecast`) pour alimenter l'interface.
-* **Frontend (Vanilla HTML/CSS/JS)** : `templates/index.html`
-  * Interface réactive construite sans framework lourd.
-  * Manipulation directe du DOM pour la création du tableau hiérarchique expansible (Projet > Consultant > Transactions).
+  * Serveur web (port 5050 par défaut).
+  * Ingestion des fichiers `.xlsx` avec `openpyxl` et `pandas`.
+  * Import du fichier Forecast avec détection dynamique de la structure.
+  * API RESTful : `/api/hierarchy`, `/api/transactions`, `/api/months`, `/api/export`, `/api/upload_forecast`.
+* **Frontend (Vanilla HTML/CSS/JS)** : `templates/index.html` + `static/style.css`
+  * Interface réactive sans framework lourd.
+  * Manipulation directe du DOM pour le tableau hiérarchique expansible (Projet > Consultant > Transactions).
 * **Wrapper Desktop (Python / PyWebview)** : `icb_desktop.py`
   * Lance le serveur Flask dans un thread séparé.
-  * Ouvre une fenêtre native OS qui charge `http://localhost:5050`, donnant l'illusion d'une vraie application Desktop (au lieu d'un onglet de navigateur).
-* **Lancement** : Script Bash `launch.sh` qui démarre l'application.
+  * Ouvre une fenêtre native OS qui charge `http://localhost:5050`.
+  * Moteurs de rendu : WebKit sur macOS (dev), Edge WebView2 sur Windows (prod) : des différences de rendu CSS sont possibles.
+* **Lancement** : script Bash `launch.sh`.
+
+### Organisation du dépôt (après réorganisation)
+```
+.
+├── README.md
+├── icb_app.py
+├── icb_desktop.py
+├── launch.sh
+├── requirements.txt
+├── .gitignore            (ignore *.exe, dist/, build/, venv, uploads...)
+├── static/style.css
+├── templates/index.html
+└── docs/
+    ├── CONTEXTE.md
+    └── structureDetailleICBandForecast.txt
+```
+* `icb_app.py`, `icb_desktop.py`, `launch.sh`, `templates/` et `static/` restent **à la racine** : Flask résout `templates/` et `static/` relativement au script, et un futur build PyInstaller dépend de chemins stables.
+* L'artefact de build `icb_desktop 2.exe` ne doit plus être versionné.
+* Branche de travail Git : `forecast` (remote `louaycodes/ICB-tool`). En cas de branches divergentes : `git pull origin forecast --no-rebase` (merge), `git config pull.rebase false`.
 
 ---
 
 ## 3. Modèle Sémantique (Logique Métier)
 
 ### Hiérarchie des Données
-1. **Niveau 1 : CC Project** (Identifié par `CC Project Number` et `Project Name`).
-2. **Niveau 2 : Consultant** (Identifié par `Employee Number` et `Full Name`).
-3. **Niveau 3 : Transactions (Expenditures)** (Chaque ligne de dépense individuelle du consultant dans ce projet).
+1. **Niveau 1 : CC Project** (`CC Project Number` + `Project Name`).
+2. **Niveau 2 : Consultant** (`Employee Number` + `Full Name`).
+3. **Niveau 3 : Transactions (Expenditures)** (chaque ligne de dépense individuelle du consultant dans ce projet).
+
+### Fichier ICB (entrée principale)
+* Classeur Excel complet **multi-feuilles** ; la feuille utile s'appelle exactement **`ICB_DB`** (nom comparé exactement, erreur claire si absente).
+* Cette feuille a ses **5 premières lignes vides** et sa **colonne A entièrement vide** : la ligne d'en-têtes et la colonne de départ sont détectées dynamiquement (scan des premières lignes à la recherche des en-têtes attendus), jamais supposées en ligne 1 / colonne A.
+* Colonnes clés lues **par nom** : `Employee Number`, `CC Project Number`, `Project Name`, `Full Name`, `Expenditure Type`, `Expenditure Item Date`, `Quantity`, `UOM`, `Bill Rate`, `Raw Cost`, `FULL NCR to Direct NCR correlation`, et la colonne de prix de transfert (voir ci-dessous).
+* Colonne de prix de transfert : détectée par nom, dans cet ordre, parmi 3 variantes possibles (comparaison insensible à la casse et aux espaces) :
+  1. `Project Transfer Price`
+  2. `Project Revenue Price`
+  3. `Revenue Project TP`
+  Si aucune n'existe : erreur explicite dans le terminal (jamais de repli silencieux sur 0).
+* `Employee Number` : format `6427_XXX` (préfixe `6427_` + ID).
+* Filtres métier usuels : `Expenditure Type` = `RC_Time Std` (et variantes `RC_Overtime Std Cost`, `x1.25`, `x1.5`, `x2`), `UOM` = `HOURS`.
+
+### Fichier Forecast (entrée secondaire)
+Classeur Excel à **plusieurs feuilles** :
+* **Feuille principale** (nom variable, ex. `Sheet1` ou `Forecast26`) : une ligne par consultant et par projet, 12 blocs mensuels.
+  * Colonnes d'identité : `Project Num`, `Project Name`, `GGID`, `Employee Name`.
+  * 12 blocs mensuels de 6 sous-colonnes : `Grade`, `F.RC`, `Vaca`, `Prod`, `Cost`, `FTE`.
+  * Blocs `Total` (annuel) et `TR Q1..TR Q4` (trimestriels) : ignorés.
+  * Aucune année dans le fichier : les mois sont rattachés à **l'année système actuelle**.
+  * Relations internes : `Cost = F.RC × Prod` ; `FTE = Prod / 21`.
+  * En production : plusieurs projets empilés (bloc consultants + ligne Total par projet, cellules `Project Num`/`Project Name` fusionnées ou non).
+* **Feuille `EDM`** (matching Projet → Engagement Manager) :
+  * Contient **deux colonnes `Project Num`** : la colonne A (**à ignorer**) et la colonne **C** (**à utiliser**).
+  * L'EM vient de la colonne `Engagement Manager` (colonne E ; tolérance à la faute de frappe `Engagemenet Manager`).
+  * Remplace l'ancienne feuille `Project-EM` (Project Code / Project Name / EM Name), qui n'est plus utilisée.
 
 ### Règles de Calculs Financiers
-* **Working Days** : Calculé en divisant la quantité d'heures brutes (`Quantity`) par **8**.
-* **NCR (Taux journalier)** : Calculé en multipliant le `Bill Rate` existant (qui est à l'heure) par **8**.
-* **Raw Cost** : Conservé tel quel depuis le fichier source (colonne `Raw Cost`, col AA).
-* **Cost (anciennement "Bill Amount")** : Source ICB provenant de la colonne `Project Transfer Price` du fichier ICB. La colonne est détectée dynamiquement par son nom dans les en-têtes (comparaison insensible à la casse et aux espaces). Si la colonne est introuvable, une erreur explicite est loggée dans le terminal. **Important** : la variable interne reste nommée `bill_amount` / `total_bill_amount` dans le code Python et le JSON API, mais l'affichage UI et l'export Excel utilisent le libellé "Cost".
-* **NCR au niveau projet** : Calculé comme la **moyenne simple** des NCR des consultants du projet (pas une somme). Idem pour le NCR Forecast au niveau projet.
+* **Working Days** : `Quantity` (heures) / **8**.
+* **NCR (taux journalier)** : `Bill Rate` (horaire) × **8**.
+* **Raw Cost** : conservé tel quel (colonne `Raw Cost`). **Masqué dans l'UI**, présent dans l'export (optionnel).
+* **Transfer Price (ex-"Bill Amount", puis "Cost")** : source ICB = colonne `Project Transfer Price` (ou variantes). Variables internes inchangées : `bill_amount`, `total_bill_amount`, `forecast_bill_amount`. Seuls les libellés affichés changent.
+* **NCR au niveau projet** (UI) : **moyenne simple** des NCR des consultants (ICB et Forecast séparément), plus une somme.
 
 ### Détection des Anomalies (NCR)
-* Basée sur la colonne source `FULL NCR to Direct NCR Correlation`.
-* **Cible (Target)** : 0.75 (soit 75%).
-* **Tolérance** : ± 0.05.
-* **Règle métier** : Une ligne est considérée comme une anomalie si la valeur absolue de cette corrélation n'est **PAS** comprise entre `[0.70, 0.80]`. 
+* Basée sur `FULL NCR to Direct NCR Correlation` : cible 0.75, tolérance ± 0.05.
+* Anomalie si la valeur absolue n'est **pas** dans `[0.70, 0.80]`.
+
+### Règles de Mapping ICB ↔ Forecast
+| Élément | ICB | Forecast |
+|---|---|---|
+| Projet | `CC Project Number` | `Project Num` |
+| Consultant | `Employee Number` | `GGID` |
+| Normalisation | retirer le préfixe `6427_` des deux côtés avant comparaison | idem |
+| Clés | `_normalize_key` appliquée aux numéros de projet | idem |
+
+Mapping des métriques Forecast → colonnes du tableau :
+* `F.RC` → **NCR FORECAST** (si absent : `(Cost / Prod) × 8`)
+* `Prod` → **Working Days FORECAST**
+* `Cost` → **Transfer Price FORECAST**
 
 ---
 
-## 4. Fonctionnalités Implémentées (Historique de développement)
+## 4. Fonctionnalités actuelles (état courant)
 
 ### UI & Expérience Utilisateur
-* **Design "Dark/Corporate"** : Entête fixée (sticky) avec décalage dynamique pour que les en-têtes complexes (multi-lignes) du tableau restent visibles lors du scroll sans se superposer.
-* **Mise en forme du tableau en grille** :
-  * Séparations verticales ajoutées sur toutes les lignes pour améliorer la lisibilité.
-  * **Colonnes Groupées** : Les métriques clés (`NCR`, `Working Days`, `Cost`) sont des en-têtes parents. Sous chacune d'elles se trouvent deux sous-colonnes centrées : **`ICB`** (valeur réelle provenant du backend) et **`FORECAST`** (valeur extraite du fichier Forecast importé, remplie automatiquement par consultant et par projet après import).
-* **Surlignage des écarts (Gap Highlight)** : Pour chaque paire de cellules ICB / FORECAST :
-  * **NCR et Cost** : Surlignage rouge si les valeurs diffèrent de plus que le seuil de tolérance configurable (défaut : 2). Ce seuil est modifiable en temps réel via le champ "Tolérance Ecart (Montant/NCR)" de l'interface.
-  * **Working Days** : Comparaison **stricte** (sans tolérance) — tout écart, même de 0.01 jour, déclenche le surlignage.
-  * Le surlignage est recalculé dynamiquement à chaque affichage ou changement de tolérance.
-* **État des tableaux par défaut** : Lors du chargement, tous les projets sont "repliés" (collapsed) pour ne pas surcharger la vue.
-* **Recherche Dynamique** :
-  * Recherche textuelle (sans tenir compte de la casse) sur le `Project Name`, le `CC Number`, l'ID Consultant ou son Nom.
-  * **Persistance de l'état** : Effacer la recherche (ou la vider) restaure l'état exact des projets (ouverts ou fermés) tels qu'ils étaient avant ou pendant la recherche, sans tout forcer à s'ouvrir.
-* **Filtres de Date (Global)** :
-  * Deux champs input `Du` et `Au` permettent de filtrer tout le fichier sur une période précise.
-  * **Barre des mois dynamique** : Se met à jour en temps réel pour n'afficher que les mois inclus dans l'intervalle "Du/Au" et contenant des données.
+* **Design "Dark/Corporate"**, en-têtes sticky sur deux lignes, grille avec séparations verticales.
+* **Application entièrement en anglais** (libellés, messages, dialogues, logs). Les mots-clés de matching (en-têtes de fichiers, noms de feuilles, noms de mois, valeurs filtrées, identifiants techniques) n'ont **pas** été traduits.
+* **Colonnes groupées** : `NCR`, `Working Days`, `Transfer Price`, chacune avec deux sous-colonnes `ICB` et `FORECAST`. Plus de colonne Raw Cost dans l'app.
+* **Colonne `EM Name`** juste à droite de `Projet`, au niveau projet uniquement, avec un petit bouton ▼ dans l'en-tête :
+  * ouvre une liste déroulante : `All (N)`, les EM triés alphabétiquement avec leur nombre de projets, et `(Unassigned)` si nécessaire ;
+  * sélection unique, fermeture au clic extérieur et au scroll ;
+  * se **combine** avec la recherche textuelle (moteur unique `applyTableFilters()`), sans toucher à l'état ouvert/fermé des projets ;
+  * le bouton prend la couleur d'accent quand un filtre est actif ;
+  * n'a **aucun** impact sur l'export ni sur la colonne `EM_Lead`.
+* **Surlignage des écarts** (Forecast = source de vérité) : seule la cellule **ICB** est surlignée en rouge quand elle diverge du Forecast ; la cellule FORECAST n'est **jamais** rouge.
+  * NCR et Transfer Price : écart > seuil de tolérance configurable.
+  * Working Days : comparaison **stricte** (toute différence).
+  * Aucun surlignage si l'une des deux valeurs est absente, ni avant le chargement de l'ICB.
+* **Seuil de tolérance configurable** : champ de saisie dans l'UI (défaut **2**, unité monétaire), source de vérité unique pour le surlignage **et** pour la génération des commentaires d'export. Modification appliquée immédiatement, sans rechargement.
+* **Gap signé** : `Transfer Price ICB − Forecast` (positif = ICB > Forecast). Le surlignage se déclenche sur `|gap| > seuil`.
+* **Union ICB/Forecast** : un consultant présent dans le Forecast mais absent de l'ICB (ou l'inverse) reste affiché ; un indicateur discret signale ces cas pour faciliter l'investigation.
+* **Consultants quittés** : un consultant absent de l'ICB pour un projet/mois **et** dont toutes les valeurs Forecast sont à 0/vides n'apparaît **nulle part** pour ce projet/mois (app, export, commentaires, totaux). Filtre appliqué mois par mois.
+* **État par défaut** : tous les projets repliés. **Recherche** (Project Name, CC Number, ID consultant, nom) : filtre sans ouvrir les projets ; effacer la recherche restaure l'état exact d'avant.
+* **Filtres de date** `From` / `To` et **barre des mois dynamique**.
+* **Boutons de chargement** : le bouton de chargement ICB disparaît après un chargement réussi ; le bouton `Importer Forecast` aussi (un seul import par session). Chaque bouton est indépendant.
 
-### Import et Intégration du Fichier Forecast
-* **Bouton "Importer Forecast"** : Apparaît dans le header après le chargement du fichier ICB. Permet d'uploader un fichier `.xlsx` de Forecast. Le bouton disparaît après import (un seul import par session). Le mécanisme de chargement est aligné sur celui de l'ICB : sauvegarde disque dans `uploads/`, lecture via openpyxl, fermeture explicite du handle fichier.
-* **Parsing dynamique de la structure** (`load_forecast` dans `ICBPipeline`) :
-  * **Détection automatique de la ligne d'en-têtes** : Scan des 20 premières lignes, identification par présence d'au moins 3 marqueurs parmi `Project Num`, `Project Name`, `GGID`, `Employee Name`, `Grade`.
-  * **Colonnes d'identité trouvées par nom** (pas par position fixe) : `Project Num` = clé de mapping projet (correspond à `CC Project Number` de l'ICB), `GGID` = clé de mapping consultant (correspond à `Employee Number` de l'ICB, après retrait du préfixe `6427_` des deux côtés).
-  * **Blocs mensuels détectés dynamiquement** : Les noms de mois (FR + EN : Janvier/January/Jan, … , Décembre/December/Dec) sont cherchés dans les lignes au-dessus du header. Chaque bloc couvre 6 sous-colonnes : `Grade`, `F.RC`, `Vaca`, `Prod`, `Cost`, `FTE`. Si l'ordre est non standard, fallback par recherche de nom dans une plage élargie.
-  * **Exclusion automatique des blocs Total/TR** : Les blocs dont le label contient `Total` ou commence par `TR ` (TR Q1, TR Q2, etc.) sont ignorés.
-  * **Détection des blocs projets** : Via plages fusionnées (merged cells) dans la colonne `Project Num` détectée, ou par rupture de valeur en fallback. La propagation du numéro de projet gère les cellules fusionnées (seule la cellule d'ancrage porte la valeur, les suivantes sont `None`).
-  * **Lignes Total exclues** : Toute ligne où `GGID` est vide est considérée comme une ligne résumé/total et ignorée.
-  * **Garde-fous** : Lignes parasites détectées (valeur de Project Num correspondant à un libellé d'en-tête ou un nom de mois), arrêt propre sans crash si colonnes obligatoires introuvables.
-* **Mapping Forecast → colonnes du tableau** :
-  * `F.RC` → **NCR FORECAST** (taux journalier, moyenne des F.RC non nulles sur les mois actifs ; si aucune F.RC, calcul dérivé : `(Cost / Prod) × 8`)
-  * `Prod` → **Working Days FORECAST**
-  * `Cost` → **Cost FORECAST** (alias Forecast bill amount dans l'export)
-* **Sérialisation complète** : Les champs `forecast_ncr`, `forecast_working_days`, `forecast_bill_amount` sont inclus dans le JSON de chaque consultant renvoyé par `/api/hierarchy`.
-* **Stockage in-memory** : `pipeline.forecast_data` est un dict `{(proj_norm, ggid_norm, month_key): {ncr, working_days, bill_amount}}` et `pipeline.forecast_names` stocke les noms extraits du Forecast.
+### Import du Fichier Forecast
+* Bouton dans le header (apparaît après le chargement de l'ICB). Fichier sauvegardé dans `uploads/current_forecast.xlsx`, lu via openpyxl, workbook fermé explicitement.
+* **Feuille principale trouvée par détection**, pas par `wb.active` : parcours de **tous** les onglets, en appliquant les marqueurs d'en-têtes (au moins 3 parmi `Project Num`, `Project Name`, `GGID`, `Employee Name`, `Grade`, dans les 20 premières lignes). La feuille `EDM` est **exclue** de cette recherche. Indépendant de l'ordre des onglets.
+* **Parsing dynamique** (`load_forecast`) :
+  * ligne d'en-têtes trouvée par scan ;
+  * colonnes d'identité trouvées par nom ;
+  * blocs mensuels détectés par nom de mois (FR + EN, avec/sans accents), avec fallback si l'ordre des 6 sous-colonnes est non standard ;
+  * blocs `Total` / `TR ` exclus ;
+  * blocs projets via cellules fusionnées, sinon rupture de valeur ; gestion de la cellule d'ancrage des fusions ;
+  * ligne Total = `GGID` vide, ignorée ; lignes parasites ignorées ;
+  * arrêt propre (sans crash) si une colonne obligatoire est introuvable.
+* **Lecture de la feuille `EDM`** : en-têtes scannés dans les 20 premières lignes ; `Project Num` = seconde occurrence (colonne C, vérifiée, sinon colonne C par position + warning) ; EM = `Engagement Manager` (colonne E) ; lignes avec valeur vide ignorées ; doublons avec EM différents → warning, première valeur conservée ; absence de feuille = map vide silencieuse. Le champ `em_name` est ajouté à chaque projet dans `/api/hierarchy`.
+* **Stockage** : `pipeline.forecast_data` = `{(proj_norm, ggid_norm, month_key): {ncr, working_days, bill_amount}}` ; `pipeline.forecast_names` pour les noms.
 
-### Logs de Diagnostic (Forecast Import)
-* **Conservés volontairement en production** — visibles uniquement dans le terminal (`print()` côté serveur), aucun impact UI.
-* **6 sections structurées** affichées lors de chaque import Forecast :
-  1. **Détection de la ligne d'en-têtes** : ligne trouvée, nombre de colonnes
-  2. **Colonnes d'identité** : position Excel de chaque colonne trouvée
-  3. **Blocs mensuels** : chaque mois avec ses colonnes F.RC/Prod/Cost, blocs Total/TR ignorés
-  4. **Blocs projets** : merged cells ou rupture de valeur, lignes Total détectées
-  5. **Mapping ICB** : projets matchés/non matchés, consultants matchés/non matchés (avec GGID brut et normalisé)
-  6. **Résultat final** : résumé en une ligne `[FORECAST IMPORT] X projets, Y/Z consultants matchés, W cellules remplies`
-* **Aucun blocage si anomalie** : les problèmes sont loggés et le traitement continue avec ce qui peut être mappé.
-* **Note** : tous les logs de debug temporaires (préfixes `[DIAG-BACKEND]`, `[DIAG-FRONTEND]`, compteurs de clics, dumps JSON, traces d'insertion DOM) ont été supprimés. Seul ce bloc structurel de Forecast Import reste.
+### Logs de Diagnostic (conservés volontairement en production)
+Visibles uniquement dans le terminal (`print()`), aucun impact UI. Bloc `[FORECAST IMPORT]` structuré :
+1. détection de la ligne d'en-têtes ;
+2. colonnes d'identité (position Excel) ;
+3. blocs mensuels (Total/TR ignorés) ;
+4. blocs projets (fusions ou rupture de valeur, lignes Total) ;
+5. mapping ICB (projets et consultants matchés/non matchés, GGID brut et normalisé) ;
+6. résultat final : `[FORECAST IMPORT] X projets, Y/Z consultants matchés, W cellules remplies`.
 
-### Mécanisme d'Exportation Excel
-* **Export "Ce que tu vois est ce que tu exportes"** : Le bouton Exporter prend les filtres actuels de dates (Global + Barre de mois) et le seuil de tolérance configurable, et exporte ces données.
-* **Dialogue Natif (Pywebview)** : Le backend intercepte la demande et ouvre une fenêtre de sauvegarde native (`pywebview.FileDialog.SAVE`) pour choisir précisément où stocker le fichier. Fallback sur le Bureau si pywebview n'est pas disponible.
-* **Format de l'Export** :
-  * Uniquement les agrégats de projets (pas le détail des consultants).
-  * Les onglets (sheets) sont divisés par **Mois**.
-  * **Vrai tableau Excel structuré** : filtres automatiques, bandes alternées (style `TableStyleMedium9`).
-  * **10 Colonnes générées** : 
-    1. `EM_Lead` — vide, réservée pour saisie manuelle future
-    2. `Project Name`
-    3. `CC Project Number`
-    4. `Working Days`
-    5. `Cost` — alimentée par la colonne `Project Transfer Price` de l'ICB
-    6. `Forecast bill amount` — somme automatique du Forecast Cost pour le mois et projet donnés. Vide si aucune donnée forecast disponible.
-    7. `Gap` — formule Excel active (`=E{row}-F{row}` soit `Cost - Forecast bill amount`) qui se met à jour seule à l'ouverture d'Excel.
-    8. `Raw Cost`
-    9. `Issue Type` — vide, réservée pour saisie manuelle future
-    10. `Generated comment` — commentaire automatique en cas d'écart (voir ci-dessous)
-* **Logique de génération des commentaires (`Generated comment`)** :
-  * Déclenché si un écart `Gap` dépasse le seuil de tolérance configurable (défaut : 2).
-  * Analyse les écarts en partant **exclusivement** des consultants présents dans l'ICB (pas du Forecast).
-  * Détail nominatif par consultant (ID + nom si disponible) pour chaque cause identifiée :
-    * **Écart de jours travaillés** (`Working Days`) : comparaison stricte
-    * **Écart de taux NCR** : si la différence dépasse le seuil de tolérance
-    * **Écart de Cost** (fallback) : si aucun écart WD ou NCR n'est identifié, les 5 consultants contribuant le plus à la différence de Cost sont listés avec le libellé "Probleme avec Cost".
-    * **Fallback final** : "Probleme avec Cost (a verifier manuellement)" si la cause reste diffuse.
-  * Maximum 5 consultants affichés par cause, avec indication du nombre d'autres consultants restants.
+S'y ajoutent les logs `EDM` : colonnes retenues (ex. « Project Num = colonne C, Engagement Manager = colonne E, colonne A ignorée »), nombre de projets lus, matchés et sans correspondance.
+Tous les logs de debug temporaires (`[DIAG-BACKEND]`, `[DIAG-FRONTEND]`, compteurs de clics, dumps JSON, traces DOM) ont été supprimés.
 
-### Gap signé (sans valeur absolue)
-* **Changement** : La colonne **GAP** dans le tableau UI et dans l'export Excel affiche désormais la **valeur signée** de l'écart (`Cost ICB - Forecast`), et non plus la valeur absolue.
-  * **Positif** : ICB > Forecast (on facture plus que prévu).
-  * **Négatif** : ICB < Forecast (on facture moins que prévu).
-* **Logique de surlignage** : Le surlignage rouge reste déclenché si `|gap| > seuil de tolérance` (la détection utilise toujours la valeur absolue pour identifier les écarts significatifs, mais la valeur affichée montre le sens).
-* **Export Excel** : La formule `=E{row}-F{row}` dans la colonne Gap était déjà signée par nature. Le commentaire du code a été mis à jour pour refléter cette intention.
+### Export Excel
+* "Ce que tu vois est ce que tu exportes" : respecte les filtres de dates (Global + barre des mois) et le seuil de tolérance. Dialogue de sauvegarde natif pywebview (fallback Bureau).
+* Un onglet par **mois**, chacun en **vrai tableau Excel** (`TableStyleMedium9` : filtres automatiques, bandes alternées).
+* **Dialogue d'export** : liste de cases à cocher, même style visuel qu'avant :
+  1. `Working Days` : décochée par défaut
+  2. `Raw Cost` : décochée par défaut
+  3. `Generated comment` : cochée par défaut
+  4. `Controlling comment` : cochée par défaut, **dernière** de la liste
+  Une case décochée retire complètement la colonne du tableau (elle n'est pas laissée vide). Les autres colonnes sont toujours présentes.
+* **Colonnes de l'export** (dans l'ordre) :
+  1. `EM_Lead` : vide, saisie manuelle (indépendante de `EM Name`)
+  2. `Project Name`
+  3. `CC Project Number`
+  4. `Working Days` *(optionnelle)*
+  5. `ICB Transfer Price`
+  6. `Forecast Transfer Price` : somme du Forecast pour le projet/mois ; vide si aucune donnée Forecast (distinction « pas de donnée » / « 0 » faite via `forecast_data`)
+  7. `Gap` : formule Excel active `ICB Transfer Price − Forecast Transfer Price` (signée)
+  8. `Raw Cost` *(optionnelle)*
+  9. `Issue Type` : vide, saisie manuelle
+  10. `Generated comment` *(optionnelle)*
+  11. `Controlling comment` *(optionnelle)* : vide, saisie manuelle
+* Feuille **KPI Dashboard** ajoutée à la fin (voir plus bas).
 
-### Feuille KPI Dashboard dans l'Export Excel
-* **Nouvelle feuille** ajoutée automatiquement à la fin du fichier Excel d'export, intitulée **"KPI Dashboard"**.
-* **5 sections analytiques** stylisées avec couleurs, bordures, et formats numériques :
+### Génération des commentaires (`Generated comment`)
+* Écrits en **anglais**.
+* Déclenchés si le gap dépasse le seuil de tolérance configurable.
+* Analyse partant **de l'ICB** (source), en cherchant l'équivalent dans le Forecast ; un consultant sans équivalent Forecast n'est jamais signalé (turn-over normal). Les catégories « absent de l'ICB » / « absent du Forecast » **n'existent plus**.
+* **Regroupés par consultant** (et non par métrique). Un consultant n'apparaît qu'une fois, avec une ligne par gap détecté pour lui :
+  ```
+  30065302 (Name)
+  Gap due to working days: ICB=95.0 D/Forecast=19.0 D
+  Gap due to rate (NCR): ICB=160.8/Forecast=143.11
 
-  1. **Synthèse Mensuelle** : Tableau récapitulatif par mois avec Cost ICB, Forecast, Gap (signé), Working Days, Raw Cost, Nb Projets, Nb Consultants. Ligne TOTAL en bas avec fond bleu accentué. Les écarts négatifs sont surlignés en rouge clair, les positifs en vert clair.
+  50612319 (Name)
+  Gap due to working days: ICB=100.0 D/Forecast=20.0 D
+  ```
+* Code consultant normalisé (sans `6427_`) + nom. Jours affichés avec le suffixe ` D` (ex. `95.0 D`).
+* **Aucune troncature** : tous les consultants concernés sont listés (plus de « ... and X other(s) »).
+* Une cause par ligne dans la **même cellule** : `"\n".join(...)`, `Alignment(wrap_text=True, vertical='top')` et hauteur de ligne recalculée (~15 pts par ligne), car openpyxl ne l'ajuste pas seul.
+* Causes indépendantes : jours travaillés, taux (NCR) et `Cost issue` peuvent coexister (le `Cost issue` n'est plus un repli exclusif).
+* Repli final `Cost issue (requires manual verification)` : seulement si un gap de Transfer Price existe au niveau projet sans consultant individuel qui l'explique.
 
-  2. **Bill Amount Cumulé par Mois** *(exigence spécifique)* : Montre la progression du Bill Amount (Cost ICB) mois après mois :
-     * Mois 1 : valeur du mois 1
-     * Mois 2 : valeur cumulée du mois 1 + mois 2
-     * Mois 3 : valeur cumulée du mois 1 + mois 2 + mois 3
-     * Et ainsi de suite...
-     * Inclut aussi le Forecast cumulé, le Gap cumulé, et le pourcentage de progression du cost d'un mois à l'autre.
-     * La colonne Cost ICB Cumulé est en **gras vert** sur fond vert clair, la colonne Forecast Cumulé en **gras bleu**.
-
-  3. **Synthèse par Projet** : Vue consolidée de chaque projet sur toutes les périodes, triée par Cost ICB décroissant. Inclut : Cost ICB Total, Forecast Total, Gap (signé), Gap en %, Working Days, NCR Moyen, Nb Consultants uniques. Alternance de couleur de fond pour la lisibilité.
-
-  4. **Top Consultants par Cost** : Les 50 premiers consultants triés par Cost ICB total décroissant. Inclut : Employee ID, Nom, Projet principal, Cost ICB Total, Working Days Total, NCR moyen, Nb Mois Actifs, Cost Moyen par Mois.
-
-  5. **Détail Consultant par Mois** : Tableau croisé avec un consultant par ligne et un mois par colonne, affichant le Cost ICB de chaque consultant pour chaque mois. Colonne TOTAL en fin de ligne (en gras vert sur fond vert clair). Trié par nom alphabétique.
-
-* **Méthode `_build_kpi_sheet`** : Méthode séparée dans `ICBPipeline` pour la maintenabilité. Appelée automatiquement par `export_to_excel` après la création des onglets mensuels.
-* **Styles** : Palette cohérente avec le thème de l'application (bleu foncé/corporate). Utilise `openpyxl.styles` (Font, PatternFill, Border, Alignment) et des formats numériques Excel natifs (`#,##0.00`, `0.0%`).
+### Feuille KPI Dashboard (export)
+Feuille **"KPI Dashboard"** ajoutée automatiquement, générée par `_build_kpi_sheet` :
+1. **Synthèse mensuelle** : Cost ICB, Forecast, Gap signé, Working Days, Raw Cost, Nb Projets, Nb Consultants, ligne TOTAL.
+2. **Cumul par mois** : Cost ICB cumulé mois après mois (mois 1, mois 1+2, mois 1+2+3...), Forecast cumulé, Gap cumulé, % de progression.
+3. **Synthèse par projet** : triée par Cost ICB décroissant (Cost, Forecast, Gap, Gap %, Working Days, NCR moyen, Nb consultants).
+4. **Top 50 consultants** par Cost ICB.
+5. **Détail consultant par mois** : tableau croisé, colonne TOTAL.
+Palette cohérente avec le thème, formats numériques Excel natifs.
 
 ---
 
-## 5. Notes pour le prochain Agent / Développeur
-* **Structure In-Memory** : Actuellement, le fichier chargé est stocké dans la variable globale `pipeline` dans `icb_app.py`. Cela convient à une utilisation Desktop mono-utilisateur.
-* **Normalisation des clés** : Attention dans `icb_app.py`, la fonction `_normalize_key` est très importante. Le `CC Project Number` peut parfois être lu comme un `int` (ex: `1234`) ou une `str` (ex: `P-1234`). La normalisation empêche les plantages lors des tris côté Python.
-* **Normalisation GGID / Employee Number** : Les deux fichiers (ICB et Forecast) utilisent un préfixe `6427_` devant l'ID consultant. Ce préfixe est **retiré des deux côtés** avant comparaison (`.replace("6427_", "")`). Si un fichier de production utilise un préfixe différent, cette logique devra être adaptée.
-* **Détection dynamique de la colonne "Project Transfer Price"** : Dans `ICBPipeline.load()`, le code parcourt dynamiquement les en-têtes du fichier ICB pour trouver la colonne dont le nom correspond à `"Project Transfer Price"` (comparaison insensible à la casse, espaces ignorés). Si la colonne est introuvable, une erreur explicite est affichée dans le terminal avec la liste des colonnes disponibles. Ce mécanisme évite de coder en dur un index de colonne (ex: AF) qui pourrait changer d'un fichier à l'autre.
-* **Naming interne vs affichage** : La variable `self.bill_amount` et les clés JSON (`bill_amount`, `total_bill_amount`, `forecast_bill_amount`) conservent leur nom historique pour éviter de casser les références croisées backend/frontend. Seuls les libellés affichés (UI, export) utilisent le nom "Cost".
-* **Dates Excel** : La fonction `excel_serial_to_date` est essentielle, car `pandas/openpyxl` lisent parfois les dates sous forme de numéros de série (float) à partir de 1899.
-* **Pywebview Threading** : Les boîtes de dialogue natives (comme `create_file_dialog`) nécessitent que la fenêtre de pywebview soit accessible et gérée sur le bon thread. C'est le cas actuellement.
-* **Parsing Forecast robuste** : Le parser Forecast (`load_forecast`) est conçu pour fonctionner même si la structure du fichier est décalée (ligne d'en-têtes pas à la ligne 6, colonnes d'identité pas en A-D, blocs mensuels pas à partir de la colonne G). Tout est détecté par nom. En cas de fichier de production avec une structure inconnue, les logs de diagnostic dans le terminal permettent d'identifier rapidement le problème.
-* **Double ouverture du fichier Forecast** : `load_forecast` ouvre le fichier deux fois — une première fois en mode normal (`data_only=True`) pour la détection de structure (merged cells, headers), puis une seconde fois en `read_only=True` pour le parsing rapide des données. C'est voulu pour la fiabilité (merged cells non accessibles en read_only).
-* **Nettoyage des NaN (JSON strict)** : L'utilisation de Pandas génère parfois des valeurs `NaN` (float) pour les cellules vides. Pour empêcher que `jsonify` ne produise un token littéral `NaN` (ce qui fait crasher `JSON.parse` côté frontend), toute valeur est passée dans des filtres locaux (ex: `_clean()` dans `ExpenditureItem`, ou `_to_float()`) qui convertissent les `NaN`/`Infinity` en `None` ou `0.0`.
-* **Logique des écarts (Commentaires Export)** : Le rapport Excel n'itère que sur les consultants ICB pour chercher leurs équivalents dans le Forecast. Toute absence est considérée comme un turn-over normal et est ignorée.
-* **Fichier de référence** : Le fichier `structureDetailleICBandForecast.txt` contient la documentation technique détaillée de la structure des deux fichiers Excel (ICB et Forecast), colonnes, types, et règles de mapping.
-* **KPI Dashboard** : La méthode `_build_kpi_sheet` est appelée par `export_to_excel` et collecte toutes les données nécessaires en itérant sur chaque mois via `hierarchy_data()`. Les données sont d'abord agrégées en mémoire (`monthly_stats`, `project_stats`, `consultant_monthly`) puis écrites section par section. La performance est acceptable car le volume de données KPI est faible comparé aux données brutes.
+## 5. Historique détaillé des modifications
+
+Regroupé par thème, dans l'ordre approximatif de réalisation.
+
+### A. Intégration du fichier Forecast
+1. **Ajout du bouton d'import Forecast**, chargement du tableau avec les valeurs Forecast : `Prod` → Working Days, `Cost` → Forecast du Bill Amount, `F.RC` → NCR. Mapping projet par `Project Num` = `CC Project Number`, consultants par `GGID` = `Employee Number`.
+2. **Année implicite** : le fichier ne contient pas d'année, les mois sont rattachés à l'année système actuelle.
+3. **Normalisation du préfixe `6427_`** retiré des deux côtés avant comparaison.
+4. **Import limité à un seul par session** ; l'ICB principal n'est jamais rechargé.
+5. **Règle de non-correspondance** : projets/consultants du Forecast sans équivalent ICB ignorés silencieusement. Le Forecast ne sert qu'à remplir les cellules mappées.
+6. **Parsing rendu dynamique** après constat que le fichier de production avait une structure décalée (feuille `Forecast26`, en-têtes pas en ligne 6, 104 colonnes, pas de cellules fusionnées). Détection par nom de la ligne d'en-têtes, des colonnes d'identité, des blocs mensuels et des blocs projets, avec fallback par rupture de valeur.
+7. **Logs de diagnostic** ajoutés pour analyser les fichiers de production ; faux positif « colonnes détectées 16383 vs 87 » corrigé (le contrôle se base maintenant sur le contenu réel et non sur `ws.max_column`).
+
+### B. Fiabilité du chargement
+8. **WinError 32 sous Windows** : l'upload Forecast passait par un fichier temporaire système dont le handle restait ouvert. Alignement sur le mécanisme de l'ICB : sauvegarde dans `uploads/current_forecast.xlsx`, lecture par chemin, `wb.close()` dans un `finally`, plus aucune suppression de fichier temporaire.
+9. **IndentationError** introduite par une modification de l'agent dans `icb_app.py` : corrigée.
+10. **Nouvelle structure du fichier ICB** : classeur multi-feuilles, feuille `ICB_DB`, 5 premières lignes et colonne A vides → sélection explicite de la feuille et détection dynamique de la ligne d'en-têtes et de la colonne de départ.
+11. **Détection de la feuille Forecast principale** : `wb.active` pointait sur la feuille d'appariement EM après son ajout et annulait tout l'import. Remplacé par un parcours de tous les onglets avec exclusion de la feuille EM.
+
+### C. Colonne Bill Amount → Cost → Transfer Price
+12. **Remplacement de la source ICB** : la colonne Bill Amount ICB est remplacée par `Project Transfer Price`. Première hypothèse erronée (`Revenue Project TP`, col AF) → toutes les valeurs à 0 ; corrigé par détection dynamique par nom exact.
+13. **Trois noms possibles** pour cette colonne : `Project Transfer Price`, `Project Revenue Price`, `Revenue Project TP`. Erreur explicite si aucun n'existe.
+14. **Renommages** : "Bill Amount" → "Cost" → **"Transfer Price"** (en-tête de la grande colonne dans l'app) ; export : `ICB Transfer Price` et `Forecast Transfer Price`. Les noms internes de variables restent `bill_amount`.
+
+### D. Écarts, surlignage et seuils
+14. **Surlignage rouge** des écarts ICB vs FORECAST (NCR, Working Days, Transfer Price).
+15. **Seuil de tolérance relevé** (de 0.01 à 2) pour ignorer les écarts de quelques centimes, puis rendu **configurable depuis l'UI** (champ de saisie, défaut 2). Plus aucune constante en dur.
+16. **Working Days** : plus aucune tolérance, comparaison stricte.
+17. **Aucun surlignage avant le chargement de l'ICB.**
+18. **Forecast = source de vérité** : seule la cellule ICB est surlignée en rouge (plus les deux).
+19. **Gap signé** dans l'UI et l'export.
+20. **NCR projet** : moyenne simple au lieu de la somme.
+
+### E. Export Excel
+21. **Colonnes Forecast Bill Amount / Gap / Comment remplies automatiquement** à l'export (auparavant vides pour saisie manuelle).
+22. **Export en vrai tableau Excel** avec filtres et bandes alternées ; **nouvelles colonnes** `EM_Lead` (début) et `Issue Type` (avant le commentaire), vides ; "Comment" renommée `Generated comment`.
+23. **Commentaires** : détail nominatif (code + nom) ; une cause par ligne dans la cellule ; sans troncature ; écrits en anglais ; suffixe ` D` pour les jours ; regroupés par consultant ; ajout de `Cost issue` avec détail nominatif.
+24. **Inversion de la logique d'analyse** : on part de l'ICB et non du Forecast ; suppression des commentaires « absent de l'ICB » / « absent du Forecast ».
+25. **Dialogue d'export** : d'abord une case pour inclure/exclure les commentaires, puis liste de cases (`Working Days`, `Raw Cost`, `Generated comment`, `Controlling comment`) avec les défauts décrits plus haut. `Controlling comment` est une nouvelle colonne vide de saisie manuelle.
+26. **Raw Cost** retiré de l'affichage de l'app, conservé (optionnel) dans l'export.
+27. **Feuille KPI Dashboard** ajoutée à l'export.
+
+### F. Données : union, zéros et quittés
+28. **Union au lieu d'intersection** des expenditure items ICB/Forecast (l'ICB généré par la plateforme source omet parfois des items pourtant pointés), avec indicateur discret dans le tableau.
+29. **Consultants quittés** : absent de l'ICB + toutes valeurs Forecast à 0 → non affiché (voir section 4).
+30. **Cas ICB = 0 / Forecast = 5** absent des commentaires : cause = tests de vérité implicites (`if wd_icb and wd_fc and ...`, `if ncr_icb and ncr_fc and ...`) qui traitaient 0 comme « pas de donnée ». Corrigés par comparaison explicite (`!=` / `abs(...) > seuil`), et assemblage des causes rendu indépendant.
+
+### G. Colonne EM Name
+31. **Première version** : feuille `Project-EM` (Project Code, Project Name, EM Name), colonne `EM Name` à côté du projet, filtre déroulant combinable avec la recherche.
+32. **Remplacement par la feuille `EDM`** : `Project Num` = colonne C (la colonne A, homonyme, est ignorée), EM = colonne `Engagement Manager` (colonne E). Détection dynamique de la ligne d'en-têtes.
+33. **Correction d'une anomalie UI au scroll** : l'en-tête de la colonne avait `position: relative` (style inline + classe) qui écrasait `position: sticky`, et un `<tr>` ouvrant manquait dans le `<thead>`. Corrigé (sticky rétabli, `z-index` supérieur, fermeture du menu au scroll).
+
+### H. Ergonomie et nettoyage
+34. **Recherche** : liste les projets correspondants sans les ouvrir.
+35. **Boutons de chargement** : disparaissent après un chargement réussi, indépendamment.
+36. **Traduction de toute l'application en anglais** (UI, messages, dialogues, logs, commentaires), sans toucher aux mots-clés de matching.
+37. **Nettoyage** : suppression des logs de debug temporaires et du code mort ; conservation du bloc `[FORECAST IMPORT]`.
+38. **Réorganisation du dépôt** : `docs/` pour la documentation, `.gitignore` (`*.exe`, `dist/`, `build/`), suppression de l'exécutable versionné.
+
+---
+
+## 6. Bugs résolus et leçons
+
+| Symptôme | Cause réelle | Correction |
+|---|---|---|
+| `WinError 32` à l'upload Forecast (Windows) | handle du fichier temporaire non libéré | fichier dans `uploads/`, lecture par chemin, `wb.close()` en `finally` |
+| Certains consultants n'affichent pas leurs expenditure items au clic | JSON invalide : `NaN` littéral (ex. `"invoice_type": NaN`) → `JSON.parse` plante côté navigateur | nettoyage des `NaN`/`Infinity` en `None` à la source et avant sérialisation |
+| Hypothèses écartées pendant ce diagnostic | type `int`/`float` d'`Employee Number`, parité de lignes (`alt`), collisions d'ID | les logs backend montraient toujours des items non vides ; la cause était dans la réponse HTTP elle-même |
+| Toutes les valeurs Transfer Price à 0 | mauvaise colonne supposée (AF / `Revenue Project TP`) | détection par nom exact + erreur explicite |
+| Import Forecast annulé après ajout de la feuille EM | `wb.active` pointait sur la feuille EM | parcours de tous les onglets, exclusion de la feuille EM |
+| Cas ICB=0 / Forecast>0 absent des commentaires | `if valeur:` traite 0 comme absent | comparaisons explicites |
+| `Cost issue` masqué dès qu'un autre consultant avait un gap WD/NCR | repli exclusif (`if not parts`) | causes indépendantes |
+| En-tête `EM` qui défile avec le corps du tableau | `position: relative` écrase `sticky` + `<tr>` manquant | CSS et HTML corrigés |
+
+**Leçon générale** : ne jamais deviner un nom de colonne ou une structure de fichier ; vérifier sur le fichier réel (ou via les logs de production), et toujours loguer clairement quand une colonne est introuvable plutôt que de retomber silencieusement sur 0.
+
+---
+
+## 7. Notes pour le prochain Agent / Développeur
+* **Structure In-Memory** : le fichier chargé est stocké dans la variable globale `pipeline` (`icb_app.py`), adapté à un usage Desktop mono-utilisateur.
+* **`_normalize_key`** : fonction centrale. Un `CC Project Number` peut être lu en `int`, `float` (`123.0`) ou `str` ; la normalisation évite les plantages de tri et les non-correspondances.
+* **Préfixe `6427_`** : retiré des deux côtés (`.replace("6427_", "")`). À adapter si la production utilise un autre préfixe.
+* **Dates Excel** : `excel_serial_to_date` est essentielle (numéros de série lus en float).
+* **`NaN` et JSON strict** : tout champ passe par des filtres (`_clean()`, `_to_float()`) ; ne jamais renvoyer un `float('nan')` à `jsonify`.
+* **Tests de vérité** : n'utiliser jamais `if valeur:` pour une valeur numérique pouvant légitimement valoir 0 ; comparer explicitement avec `None`.
+* **Naming interne vs affichage** : `bill_amount`, `total_bill_amount`, `forecast_bill_amount` gardent leur nom historique ; seuls les libellés affichés disent « Transfer Price ».
+* **Pywebview** : les dialogues natifs exigent une fenêtre accessible et gérée sur le bon thread.
+* **Double ouverture du Forecast** : une ouverture normale (`data_only=True`) pour les fusions et en-têtes, puis `read_only=True` pour la lecture rapide (les cellules fusionnées ne sont pas accessibles en `read_only`).
+* **Cellules fusionnées** : seule la cellule d'ancrage porte la valeur ; les autres renvoient `None`. Ne jamais supposer `Project Num` présent sur chaque ligne.
+* **Feuilles Forecast** : jamais `wb.active` ; détecter la feuille principale par marqueurs en excluant `EDM`.
+* **Deux colonnes `Project Num` dans `EDM`** : toujours la colonne C.
+* **Colonnes optionnelles de l'export** : la formule `Gap` doit référencer dynamiquement les colonnes `ICB Transfer Price` et `Forecast Transfer Price`, car leurs lettres changent selon les cases cochées.
+* **Seuil de tolérance** : valeur unique pilotée par l'UI et transmise au backend ; ne jamais réintroduire de constante en dur (risque de désynchronisation surlignage / export).
+* **Commentaires multi-lignes** : `\n` + `wrap_text` + hauteur de ligne explicite (openpyxl ne calcule pas la hauteur).
+* **Fichier de référence** : `docs/structureDetailleICBandForecast.txt` décrit en détail la structure des fichiers ICB et Forecast.
+* **Logs de production** : le bloc `[FORECAST IMPORT]` est volontairement conservé pour diagnostiquer les futurs fichiers.
+
+---
+
+
+
