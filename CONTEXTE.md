@@ -93,8 +93,8 @@ Classeur Excel à **plusieurs feuilles** :
   * Relations internes : `Cost = F.RC × Prod` ; `FTE = Prod / 21`.
   * En production : plusieurs projets empilés (bloc consultants + ligne Total par projet, cellules `Project Num`/`Project Name` fusionnées ou non).
 * **Feuille `EDM`** (matching Projet → Engagement Manager) :
-  * Contient **deux colonnes `Project Num`** : la colonne A (**à ignorer**) et la colonne **C** (**à utiliser**).
-  * L'EM vient de la colonne `Engagement Manager` (colonne E ; tolérance à la faute de frappe `Engagemenet Manager`).
+  * Détection dynamique des colonnes par nom : `Project Num` (ou variantes `Project Number` / `project_num`) et `Engagement Manager` (avec tolérance typo `Engagemenet Manager` / `engagement_manager`).
+  * Plus d'obligation de cibler la colonne C ni d'ignorer la colonne A : la colonne détectée par son nom est directement utilisée.
   * Remplace l'ancienne feuille `Project-EM` (Project Code / Project Name / EM Name), qui n'est plus utilisée.
 
 ### Règles de Calculs Financiers
@@ -158,7 +158,7 @@ Mapping des métriques Forecast → colonnes du tableau :
   * blocs projets via cellules fusionnées, sinon rupture de valeur ; gestion de la cellule d'ancrage des fusions ;
   * ligne Total = `GGID` vide, ignorée ; lignes parasites ignorées ;
   * arrêt propre (sans crash) si une colonne obligatoire est introuvable.
-* **Lecture de la feuille `EDM`** : en-têtes scannés dans les 20 premières lignes ; `Project Num` = seconde occurrence (colonne C, vérifiée, sinon colonne C par position + warning) ; EM = `Engagement Manager` (colonne E) ; lignes avec valeur vide ignorées ; doublons avec EM différents → warning, première valeur conservée ; absence de feuille = map vide silencieuse. Le champ `em_name` est ajouté à chaque projet dans `/api/hierarchy`.
+* **Lecture de la feuille `EDM`** : en-têtes scannés dans les 20 premières lignes ; `Project Num` et `Engagement Manager` détectés dynamiquement par nom ; lignes avec valeur vide ignorées ; doublons avec EM différents → warning, première valeur conservée ; absence de feuille = map vide silencieuse. Le champ `em_name` est ajouté à chaque projet dans `/api/hierarchy`.
 * **Stockage** : `pipeline.forecast_data` = `{(proj_norm, ggid_norm, month_key): {ncr, working_days, bill_amount}}` ; `pipeline.forecast_names` pour les noms.
 
 ### Logs de Diagnostic (conservés volontairement en production)
@@ -316,7 +316,7 @@ Regroupé par thème, dans l'ordre approximatif de réalisation.
 * **Double ouverture du Forecast** : une ouverture normale (`data_only=True`) pour les fusions et en-têtes, puis `read_only=True` pour la lecture rapide (les cellules fusionnées ne sont pas accessibles en `read_only`).
 * **Cellules fusionnées** : seule la cellule d'ancrage porte la valeur ; les autres renvoient `None`. Ne jamais supposer `Project Num` présent sur chaque ligne.
 * **Feuilles Forecast** : jamais `wb.active` ; détecter la feuille principale par marqueurs en excluant `EDM`.
-* **Deux colonnes `Project Num` dans `EDM`** : toujours la colonne C.
+* **Colonnes `EDM`** : détection dynamique par nom (`Project Num` et `Engagement Manager`).
 * **Colonnes optionnelles de l'export** : la formule `Gap` doit référencer dynamiquement les colonnes `ICB Transfer Price` et `Forecast Transfer Price`, car leurs lettres changent selon les cases cochées.
 * **Seuil de tolérance** : valeur unique pilotée par l'UI et transmise au backend ; ne jamais réintroduire de constante en dur (risque de désynchronisation surlignage / export).
 * **Commentaires multi-lignes** : `\n` + `wrap_text` + hauteur de ligne explicite (openpyxl ne calcule pas la hauteur).

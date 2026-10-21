@@ -826,9 +826,9 @@ class ICBPipeline:
                     for val in row_vals:
                         if val and isinstance(val, str):
                             vc = val.strip().lower()
-                            if vc in ("engagement manager", "engagemenet manager"):
+                            if vc in ("engagement manager", "engagemenet manager", "engagement_manager"):
                                 has_em = True
-                            elif vc in ("project num", "project number"):
+                            elif vc in ("project num", "project number", "project_num"):
                                 has_proj = True
                     if has_em and has_proj:
                         edm_header_row = r
@@ -842,49 +842,28 @@ class ICBPipeline:
                         val = edm_sheet.cell(edm_header_row, c).value
                         if val and isinstance(val, str):
                             vc = val.strip().lower()
-                            if vc in ("project num", "project number"):
+                            if vc in ("project num", "project number", "project_num"):
                                 proj_num_cols.append(c)
-                            elif vc in ("engagement manager", "engagemenet manager"):
+                            elif vc in ("engagement manager", "engagemenet manager", "engagement_manager"):
                                 em_cols.append(c)
 
-                    # Project Num: must use column C (1-indexed 3).
-                    # Among "Project Num" columns, take the second occurrence (the right one).
-                    # If only 1 occurrence or second is not column C, fallback to column C with [WARNING].
-                    col_proj = None
-                    if len(proj_num_cols) >= 2:
-                        second_col = proj_num_cols[1]
-                        if second_col == 3:
-                            col_proj = 3
-                        else:
-                            print(f"  [WARNING] [EDM] Second 'Project Num' column found at column {get_column_letter(second_col)} instead of C. Using column C by position.")
-                            col_proj = 3
-                    elif len(proj_num_cols) == 1:
-                        if proj_num_cols[0] == 3:
-                            col_proj = 3
-                        else:
-                            print(f"  [WARNING] [EDM] Only one 'Project Num' column found (column {get_column_letter(proj_num_cols[0])}). Using column C by position.")
-                            col_proj = 3
+                    # Project Num: detect by column name
+                    if proj_num_cols:
+                        col_proj = proj_num_cols[0]
                     else:
-                        print("  [WARNING] [EDM] No 'Project Num' column found by name. Using column C by position.")
-                        col_proj = 3
+                        print("  [WARNING] [EDM] No 'Project Num' column found by name. Fallback to column A by position.")
+                        col_proj = 1
 
-                    # Never retain column A (1) for joining
-                    if col_proj == 1:
-                        print("  [WARNING] [EDM] Column A detected for Project Num — overriding to column C.")
-                        col_proj = 3
-
-                    # Engagement Manager: column E (1-indexed 5).
-                    # Detected by name with typo tolerance; fallback to column E with [WARNING].
-                    col_em = None
+                    # Engagement Manager: detect by column name
                     if em_cols:
                         col_em = em_cols[0]
                     else:
-                        print("  [WARNING] [EDM] 'Engagement Manager' column not found by name. Using column E by position.")
+                        print("  [WARNING] [EDM] 'Engagement Manager' column not found by name. Fallback to column E by position.")
                         col_em = 5
 
                     col_proj_letter = get_column_letter(col_proj)
                     col_em_letter = get_column_letter(col_em)
-                    print(f"  [EDM] Project Num = column {col_proj_letter}, Engagement Manager = column {col_em_letter}, column A ignored")
+                    print(f"  [EDM] Project Num = column {col_proj_letter}, Engagement Manager = column {col_em_letter}")
 
                     # 7c. Read rows
                     distinct_edm_projects = set()
