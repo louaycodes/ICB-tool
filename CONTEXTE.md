@@ -101,7 +101,7 @@ Classeur Excel à **plusieurs feuilles** :
 * **Working Days** : `Quantity` (heures) / **8**.
 * **NCR (taux journalier)** : `Bill Rate` (horaire) × **8**, calculé **exclusivement sur les lignes standard `RC_Time Std`** (si un consultant a des heures supplémentaires, ex: x1.5 ou x2, le NCR affiché reste son taux standard et n'est pas faussé par les majorations). Si un consultant a des heures supplémentaires, un drapeau `OT` (badge ambré) est affiché sur sa ligne. La colonne GAP reste nette et numérique.
 * **Working Days & Transfer Price** : la logique reste intacte et cumule l'ensemble des types d'heures (`RC_Time Std` et variantes `RC_Overtime*`).
-* **Raw Cost** : conservé tel quel (colonne `Raw Cost`). **Masqué dans l'UI**, présent dans l'export (optionnel).
+* **Raw Cost** : conservé tel quel (colonne `Raw Cost`). **Masqué dans l'UI**, présent dans l'export (optionnel). Lorsqu'il est inclus dans le rapport Excel, la corrélation `|Raw Cost| / |Project Transfer Price| = 0.75` est calculée (tolérance 2%) : toute anomalie surbrille la cellule en **rouge clair** (`#FECACA` / texte foncé `#991B1B`) avec règle de mise en forme conditionnelle Excel active.
 * **Transfer Price (ex-"Bill Amount", puis "Cost")** : source ICB = colonne `Project Transfer Price` (ou variantes). Variables internes inchangées : `bill_amount`, `total_bill_amount`, `forecast_bill_amount`. Seuls les libellés affichés changent.
 * **NCR au niveau projet** (UI) : **moyenne simple** des NCR standards valides (`ncr > 0`) des consultants (ICB et Forecast séparément).
 
@@ -177,6 +177,8 @@ Tous les logs de debug temporaires (`[DIAG-BACKEND]`, `[DIAG-FRONTEND]`, compteu
 ### Export Excel
 * "Ce que tu vois est ce que tu exportes" : respecte les filtres de dates (Global + barre des mois) et le seuil de tolérance. Dialogue de sauvegarde natif pywebview (fallback Bureau).
 * Un onglet par **mois**, chacun en **vrai tableau Excel** (`TableStyleMedium9` : filtres automatiques, bandes alternées).
+* **Ligne de Totaux au sommet (Ligne 1)** : au-dessus des en-têtes (Ligne 2), une ligne de synthèse avec fond sombre (`#1E293B`) et texte blanc en gras affiche les sommes dynamiques via `=SUBTOTAL(9, ...)` (respectant les filtres de tableau Excel) pour `Working Days`, `ICB Transfer Price`, `Forecast Transfer Price`, `Gap` (`=ICB - Forecast`) et `Raw Cost`.
+* **Volets figés (`Freeze Panes A3`)** : les lignes 1 (Totaux) et 2 (En-têtes) restent épinglées en haut de l'écran lors du défilement.
 * **Dialogue d'export** : liste de cases à cocher, même style visuel qu'avant :
   1. `Working Days` : décochée par défaut
   2. `Raw Cost` : décochée par défaut

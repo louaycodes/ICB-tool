@@ -1340,6 +1340,7 @@ class ICBPipeline:
         import io
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.formatting.rule import FormulaRule
         from openpyxl.worksheet.table import Table, TableStyleInfo
         from openpyxl.utils import get_column_letter
 
@@ -1394,6 +1395,10 @@ class ICBPipeline:
 
                 headers = [spec[1] for spec in col_specs]
                 num_cols = len(headers)
+
+                # Row 1: Placeholder for Top Summary / Totals Row
+                ws.append([""] * num_cols)
+                # Row 2: Table Headers
                 ws.append(headers)
 
                 icb_col_idx = [i + 1 for i, s in enumerate(col_specs) if s[0] == "icb_tp"][0]
@@ -1401,7 +1406,7 @@ class ICBPipeline:
                 icb_col_letter = get_column_letter(icb_col_idx)
                 fc_col_letter = get_column_letter(fc_col_idx)
 
-                current_row = 2
+                current_row = 3
                 for cc in data:
                     norm_proj = ExpenditureItem._normalize_key(cc['cc_project_number'])
 
@@ -1442,12 +1447,28 @@ class ICBPipeline:
                     row_data = [value_map[spec[0]] for spec in col_specs]
                     ws.append(row_data)
 
-                    # Alignment
+                    # Alignment and number formatting
                     for col in range(1, num_cols + 1):
                         cell = ws.cell(row=current_row, column=col)
                         spec = col_specs[col - 1]
                         if spec[3]:  # is_numeric
                             cell.alignment = right_align
+                            cell.number_format = '#,##0.00'
+                            # Check Raw Cost correlation with Project Transfer Price (Target = 0.75)
+                            if spec[0] == "raw_cost":
+                                icb_val = cc['totals'].get('bill_amount') or 0.0
+                                raw_val = cc['totals'].get('raw_cost') or 0.0
+                                is_corr_bad = False
+                                if abs(icb_val) > 1e-6:
+                                    ratio = abs(raw_val / icb_val)
+                                    if abs(ratio - 0.75) > 0.02:
+                                        is_corr_bad = True
+                                elif abs(raw_val) > 1e-6:
+                                    is_corr_bad = True
+
+                                if is_corr_bad:
+                                    cell.fill = PatternFill(start_color="FECACA", end_color="FECACA", fill_type="solid")
+                                    cell.font = Font(name="Calibri", size=11, bold=True, color="991B1B")
                         elif spec[4]:  # is_comment
                             cell.alignment = Alignment(
                                 wrap_text=True,
@@ -1464,14 +1485,71 @@ class ICBPipeline:
 
                     current_row += 1
 
-                # Define the Excel table
-                if current_row > 2:
-                    table_ref = f"A1:{get_column_letter(num_cols)}{current_row - 1}"
+                last_data_row = current_row - 1
+
+                # --- Format Row 1: Top Totals Row with Sum Formulas ---
+                total_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+                total_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+                total_border = Border(
+                    top=Side(style="thin", color="0F172A"),
+                    bottom=Side(style="medium", color="0F172A")
+                )
+
+                for col_idx, spec in enumerate(col_specs, start=1):
+                    c_letter = get_column_letter(col_idx)
+                    cell = ws.cell(row=1, column=col_idx)
+                    cell.font = total_font
+                    cell.fill = total_fill
+                    cell.border = total_border
+
+                    key = spec[0]
+                    if key == "em_lead":
+                        cell.value = "TOTAL"
+                        cell.alignment = Alignment(horizontal="left", vertical="center")
+                    elif key in ("working_days", "icb_tp", "forecast_tp", "raw_cost"):
+                        if last_data_row >= 3:
+                            cell.value = f"=SUBTOTAL(9, {c_letter}3:{c_letter}{last_data_row})"
+                        else:
+                            cell.value = 0.0
+                        cell.alignment = Alignment(horizontal="right", vertical="center")
+                        cell.number_format = '#,##0.00'
+                    elif key == "gap":
+                        cell.value = f"={icb_col_letter}1-{fc_col_letter}1"
+                        cell.alignment = Alignment(horizontal="right", vertical="center")
+                        cell.number_format = '#,##0.00'
+                    else:
+                        cell.value = ""
+                        cell.alignment = Alignment(horizontal="left", vertical="center")
+
+                ws.row_dimensions[1].height = 24
+                ws.row_dimensions[2].height = 24
+
+                # Define the Excel table starting at Row 2 (headers at Row 2)
+                if last_data_row >= 3:
+                    table_ref = f"A2:{get_column_letter(num_cols)}{last_data_row}"
                     tab = Table(displayName=f"Table_{month.replace('-', '_')}", ref=table_ref)
                     style = TableStyleInfo(name="TableStyleMedium9", showFirstColumn=False,
                                            showLastColumn=False, showRowStripes=True, showColumnStripes=False)
                     tab.tableStyleInfo = style
                     ws.add_table(tab)
+
+                # Freeze panes at A3 so both Row 1 (Totals) and Row 2 (Headers) remain fixed at the top
+                ws.freeze_panes = "A3"
+
+                # Conditional formatting for Raw Cost correlation anomaly (Raw Cost / Project Transfer Price = 0.75)
+                if include_raw_cost and last_data_row >= 3:
+                    raw_col_idx = [i + 1 for i, s in enumerate(col_specs) if s[0] == "raw_cost"][0]
+                    raw_col_letter = get_column_letter(raw_col_idx)
+                    bad_corr_fill = PatternFill(start_color="FECACA", end_color="FECACA", fill_type="solid")
+                    bad_corr_font = Font(name="Calibri", size=11, bold=True, color="991B1B")
+                    cf_formula = (
+                        f"OR("
+                        f"AND({icb_col_letter}3=0, {raw_col_letter}3<>0), "
+                        f"AND({icb_col_letter}3<>0, ABS(ABS({raw_col_letter}3)/ABS({icb_col_letter}3) - 0.75) > 0.02)"
+                        f")"
+                    )
+                    cf_rule = FormulaRule(formula=[cf_formula], fill=bad_corr_fill, font=bad_corr_font)
+                    ws.conditional_formatting.add(f"{raw_col_letter}3:{raw_col_letter}{last_data_row}", cf_rule)
 
                 # Column width adjustments
                 for col_idx, spec in enumerate(col_specs, start=1):
