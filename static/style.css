@@ -903,3 +903,134 @@ body {
     text-overflow: ellipsis;
     max-width: 180px;
 }
+
+/* --- Error Details Modal --- */
+.modal-box--error {
+    width: 600px;
+    max-width: 95vw;
+}
+
+.modal-header--error {
+    background: #b91c1c;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.modal-close-icon {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    opacity: 0.8;
+    transition: opacity var(--transition);
+}
+
+.modal-close-icon:hover {
+    opacity: 1;
+}
+
+.error-summary-box {
+    background: rgba(239, 68, 68, 0.08);
+    border-left: 4px solid #ef4444;
+    color: #f87171;
+    padding: 12px 16px;
+    border-radius: 4px;
+    font-size: 0.92rem;
+    font-weight: 500;
+    line-height: 1.45;
+    word-break: break-word;
+}
+
+.error-tips-box {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-top: 12px;
+}
+
+.error-tips-title {
+    color: #f59e0b;
+    font-weight: 600;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.error-tips-content {
+    color: #e2e8f0;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    word-break: break-word;
+}
+
+.error-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.error-badge {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.76rem;
+    color: #94a3b8;
+}
+
+.error-details-toggle {
+    font-size: 0.82rem;
+    color: #94a3b8;
+    cursor: pointer;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    transition: color var(--transition);
+}
+
+.error-details-toggle:hover {
+    color: #e2e8f0;
+}
+
+.error-details-pre {
+    background: #090d16;
+    color: #e2e8f0;
+    padding: 12px;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.77rem;
+    line-height: 1.45;
+    max-height: 180px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin-top: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.btn--secondary {
+    background: #334155;
+    color: #f8fafc;
+}
+
+.btn--secondary:hover {
+    background: #475569;
+}
+
+.btn--copied {
+    background: #15803d !important;
+    color: #ffffff !important;
+}
+

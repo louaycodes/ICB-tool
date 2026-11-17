@@ -9,10 +9,13 @@ import sys
 import io
 import math
 import tempfile
+import zipfile
+import traceback
 import pandas as pd
 from datetime import datetime, date, timedelta
 from collections import OrderedDict
 from flask import Flask, request, jsonify, render_template
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from openpyxl import load_workbook
 
 def get_resource_path(relative_path):
@@ -47,10 +50,101 @@ NCR_CORRELATION_TOLERANCE = 0.05  # valid if abs(correlation) in [0.70, 0.80]
 
 # --- Flask app ---
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB max for upload
+app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB max for upload
 
 # In-memory storage for the pipeline (single session)
 pipeline = None
+
+# Global error handlers ensuring JSON is always returned (never HTML <!doctype)
+@app.errorhandler(RequestEntityTooLarge)
+def handle_large_file(e):
+    return jsonify({
+        "error": "The uploaded file exceeds the 500 MB server limit.",
+        "troubleshooting": "The Excel file is too large for memory processing. Please check if unused sheets can be removed or archived before uploading.",
+        "details": f"Werkzeug RequestEntityTooLarge (HTTP 413): {str(e)}",
+        "category": "File Too Large (413)",
+        "status_code": 413
+    }), 413
+
+@app.errorhandler(HTTPException)
+def handle_http_exception(e):
+    return jsonify({
+        "error": e.description or e.name,
+        "troubleshooting": "An HTTP protocol error occurred during communication between client and server.",
+        "details": f"HTTP {e.code}: {e.name}",
+        "category": f"HTTP {e.code}",
+        "status_code": e.code
+    }), e.code
+
+@app.errorhandler(Exception)
+def handle_generic_exception(e):
+    tb = traceback.format_exc()
+    return jsonify({
+        "error": str(e),
+        "troubleshooting": "An unexpected server-side exception occurred while processing the request.",
+        "details": tb,
+        "category": type(e).__name__,
+        "status_code": 500
+    }), 500
+
+
+def validate_excel_file(path, label="ICB"):
+    """Pre-flight sanity check for Excel .xlsx files before openpyxl parsing.
+    Returns (is_valid: bool, summary: str, troubleshooting: str, category: str).
+    """
+    if not os.path.exists(path):
+        return False, f"File could not be found: {path}", "The file could not be accessed.", "File Missing"
+
+    size = os.path.getsize(path)
+    if size == 0:
+        return (
+            False,
+            f"The uploaded {label} file is empty (0 bytes).",
+            "This commonly happens if the file is an 'Online-only' placeholder on OneDrive or was not fully synchronized. Right-click the file in Windows Explorer, select 'Always keep on this device', and ensure it has a solid green checkmark before loading.",
+            "Empty File (0 Bytes)"
+        )
+
+    try:
+        with open(path, "rb") as f:
+            header = f.read(2048)
+    except Exception as e:
+        return (
+            False,
+            f"Unable to read file: {str(e)}",
+            "The file may be locked by another program (such as Microsoft Excel) or blocked by OneDrive synchronization. Please close Excel and try again.",
+            "File Access Error"
+        )
+
+    header_lower = header.lower()
+    # Check for HTML content renamed to .xlsx
+    if b"<!doctype" in header_lower or b"<html" in header_lower:
+        return (
+            False,
+            f"The file appears to be an HTML document renamed to .xlsx.",
+            "Many corporate tools (e.g. Oracle, SAP) export web tables with a .xlsx extension. Please open the file in Microsoft Excel, click 'File > Save As', and choose 'Excel Workbook (*.xlsx)' before loading it.",
+            "HTML Renamed to XLSX"
+        )
+
+    # Check for legacy binary .xls (OLE2 compound document)
+    if header.startswith(b"\xd0\xcf\x11\xe0"):
+        return (
+            False,
+            f"The file is a legacy Excel 97-2003 binary file (.xls) renamed to .xlsx.",
+            "Renaming a file's extension in Windows Explorer does not convert its internal format. Please open the file in Microsoft Excel, click 'File > Save As', and choose 'Excel Workbook (*.xlsx)'.",
+            "Legacy XLS Renamed"
+        )
+
+    # Check for valid ZIP container (all true .xlsx files are ZIP archives)
+    if not zipfile.is_zipfile(path):
+        return (
+            False,
+            f"The file is corrupted or not a valid Excel archive (BadZipFile).",
+            "An .xlsx file must be a valid ZIP archive. The file transfer may have been interrupted or truncated, or the file may currently be open and locked by Microsoft Excel. Please close Excel, verify the file is intact, and re-upload.",
+            "BadZipFile / Corrupted Archive"
+        )
+
+    return True, "", "", ""
+
 
 
 # ---------------------------------------------------------------------------
@@ -67,16 +161,38 @@ def fast_load_excel(path, sheet_name=0, dynamic_header=False):
     """
     wb = load_workbook(path, read_only=True, data_only=True)
 
-    # --- Sheet selection ---
+    # --- Sheet selection with case-insensitivity and alias fallback ---
     if isinstance(sheet_name, str):
-        if sheet_name not in wb.sheetnames:
+        target_sheet = None
+        if sheet_name in wb.sheetnames:
+            target_sheet = sheet_name
+        else:
+            # Check case-insensitive match
+            for s in wb.sheetnames:
+                if s.strip().lower() == sheet_name.strip().lower():
+                    target_sheet = s
+                    break
+        
+        # Check common fallback aliases for DB_ICB
+        if target_sheet is None and sheet_name.upper() in ("DB_ICB", "ICB_DB"):
+            for candidate in ("DB_ICB", "ICB_DB", "ICB", "DB ICB", "ICB DB", "ICB_DATABASE", "DATA"):
+                for s in wb.sheetnames:
+                    if s.strip().lower() == candidate.lower():
+                        target_sheet = s
+                        print(f"[INFO] Using alternative sheet '{target_sheet}' instead of '{sheet_name}'")
+                        break
+                if target_sheet:
+                    break
+
+        if target_sheet is None:
             available = wb.sheetnames
             wb.close()
             raise ValueError(
-                f"Sheet '{sheet_name}' not found in the workbook. "
-                f"Available sheets: {available}"
+                f"Sheet '{sheet_name}' not found in workbook. "
+                f"Available sheets: {available}. "
+                f"Please ensure the workbook contains the '{sheet_name}' sheet."
             )
-        ws = wb[sheet_name]
+        ws = wb[target_sheet]
     else:
         ws = wb.worksheets[sheet_name]
 
@@ -614,6 +730,7 @@ class ICBPipeline:
             key=lambda r: r.min_row,
         )
 
+        row_to_proj = {}
         if merged_ranges:
             print(f"  {len(merged_ranges)} merged range(s) in column "
                   f"{_col_letter(col_proj)}:")
@@ -632,6 +749,9 @@ class ICBPipeline:
                     f"Total row={tot_row} "
                     f"{'[detected and excluded]' if has_total else '[NOT detected — WARNING]'}"
                 )
+                if anchor is not None:
+                    for r in range(mr.min_row, mr.max_row + 1):
+                        row_to_proj[r] = anchor
         else:
             print(f"  [INFO] No merged range in column "
                   f"{_col_letter(col_proj)}.")
@@ -671,7 +791,8 @@ class ICBPipeline:
 
             data_start_row = header_row_idx + 1
 
-            for row in ws.iter_rows(min_row=data_start_row, values_only=True):
+            for row_offset, row in enumerate(ws.iter_rows(min_row=data_start_row, values_only=True)):
+                row_num = data_start_row + row_offset
                 # Safe access to dynamically detected columns
                 def _safe(idx):
                     if idx is not None and idx < len(row):
@@ -681,16 +802,21 @@ class ICBPipeline:
                 proj_val = _safe(col_proj)
                 icb_id_val = _safe(col_icb_id)
 
-                # Update current project
-                if proj_val is not None:
+                # Determine project: check merged range map first, then in-cell project
+                if row_num in row_to_proj:
+                    current_proj = row_to_proj[row_num]
+                elif proj_val is not None:
                     # Guard: ignore parasite lines
                     pv_lower = str(proj_val).strip().lower()
                     if pv_lower in PARASITE_VALUES:
                         continue
                     current_proj = proj_val
+                else:
+                    # Neither in merged range nor has explicit proj_val
+                    current_proj = None
 
-                # Ignore Total lines (ICB ID empty)
-                if icb_id_val is None:
+                # Ignore Total lines (ICB ID empty) or lines outside any project
+                if icb_id_val is None or current_proj is None:
                     rows_skipped += 1
                     continue
 
@@ -715,15 +841,22 @@ class ICBPipeline:
                     prod = _to_float(_safe(block['prod']))
                     cost = _to_float(_safe(block['cost']))
 
-                    # Skip if all values are 0 or empty
+                    # Skip if all values are 0 or empty; accumulate if entry already exists
                     if abs(frc) > 1e-6 or abs(prod) > 1e-6 or abs(cost) > 1e-6:
-                        self.forecast_data[
-                            (norm_proj, norm_icb_id, month_key)
-                        ] = {
-                            "ncr": frc,
-                            "working_days": prod,
-                            "bill_amount": cost,
-                        }
+                        key = (norm_proj, norm_icb_id, month_key)
+                        if key in self.forecast_data:
+                            existing = self.forecast_data[key]
+                            self.forecast_data[key] = {
+                                "ncr": frc if frc > 1e-6 else existing["ncr"],
+                                "working_days": existing["working_days"] + prod,
+                                "bill_amount": existing["bill_amount"] + cost,
+                            }
+                        else:
+                            self.forecast_data[key] = {
+                                "ncr": frc,
+                                "working_days": prod,
+                                "bill_amount": cost,
+                            }
 
             # =============================================================
             # 5. MAPPING WITH THE ICB FILE
@@ -2155,24 +2288,62 @@ def index():
 def upload_file():
     global pipeline
     if "file" not in request.files:
-        return jsonify({"error": "No file provided."}), 400
-    f = request.files["file"]
-    if not f.filename.endswith(".xlsx"):
-        return jsonify({"error": "File must be in .xlsx format"}), 400
+        return jsonify({
+            "error": "No file was received by the server.",
+            "troubleshooting": "Please choose an .xlsx file using the 'Load ICB File' button.",
+            "category": "Missing File",
+            "status_code": 400
+        }), 400
 
-    # Temporary save
-    upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
-    os.makedirs(upload_dir, exist_ok=True)
-    path = os.path.join(upload_dir, "current_icb.xlsx")
-    f.save(path)
+    f = request.files["file"]
+    filename = f.filename or "unknown.xlsx"
+    if not filename.lower().endswith(".xlsx"):
+        return jsonify({
+            "error": "File must have an .xlsx extension.",
+            "troubleshooting": "Please select a valid Excel workbook ending with .xlsx.",
+            "category": "Invalid File Extension",
+            "filename": filename,
+            "status_code": 400
+        }), 400
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+    temp_path = temp_file.name
+    temp_file.close()
 
     try:
+        f.save(temp_path)
+
+        # Pre-flight sanity validation
+        is_valid, err_summary, tips, category = validate_excel_file(temp_path, label="ICB")
+        if not is_valid:
+            return jsonify({
+                "error": err_summary,
+                "troubleshooting": tips,
+                "category": category,
+                "filename": filename,
+                "status_code": 400
+            }), 400
+
         pipe = ICBPipeline()
-        pipe.load(path)
+        pipe.load(temp_path)
         pipe.process()
         pipeline = pipe
     except Exception as exc:
-        return jsonify({"error": f"Error during loading: {str(exc)}"}), 500
+        tb = traceback.format_exc()
+        return jsonify({
+            "error": f"Error during ICB file processing: {str(exc)}",
+            "troubleshooting": "Check if the file format matches the expected ICB schema or if any required headers are missing.",
+            "details": tb,
+            "category": type(exc).__name__,
+            "filename": filename,
+            "status_code": 500
+        }), 500
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
     return jsonify({
         "total_lines": len(pipeline.items),
@@ -2183,39 +2354,78 @@ def upload_file():
 @app.route("/api/upload_forecast", methods=["POST"])
 def upload_forecast():
     if "file" not in request.files:
-        return jsonify({"error": "No file provided."}), 400
-    f = request.files["file"]
-    if not f.filename.endswith(".xlsx"):
-        return jsonify({"error": "File must be in .xlsx format"}), 400
+        return jsonify({
+            "error": "No file was received by the server.",
+            "troubleshooting": "Please choose an .xlsx file using the 'Import Forecast' button.",
+            "category": "Missing File",
+            "status_code": 400
+        }), 400
 
-    # Temporary save
-    upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
-    os.makedirs(upload_dir, exist_ok=True)
-    path = os.path.join(upload_dir, "current_forecast.xlsx")
-    f.save(path)
+    f = request.files["file"]
+    filename = f.filename or "unknown.xlsx"
+    if not filename.lower().endswith(".xlsx"):
+        return jsonify({
+            "error": "File must have an .xlsx extension.",
+            "troubleshooting": "Please select a valid Excel workbook ending with .xlsx.",
+            "category": "Invalid File Extension",
+            "filename": filename,
+            "status_code": 400
+        }), 400
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+    temp_path = temp_file.name
+    temp_file.close()
 
     try:
-        pipeline.load_forecast(path)
+        f.save(temp_path)
+
+        # Pre-flight sanity validation
+        is_valid, err_summary, tips, category = validate_excel_file(temp_path, label="Forecast")
+        if not is_valid:
+            return jsonify({
+                "error": err_summary,
+                "troubleshooting": tips,
+                "category": category,
+                "filename": filename,
+                "status_code": 400
+            }), 400
+
+        pipeline.load_forecast(temp_path)
         return jsonify({"message": "Forecast file loaded successfully."}), 200
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        tb = traceback.format_exc()
+        return jsonify({
+            "error": f"Error during Forecast loading: {str(exc)}",
+            "troubleshooting": "Verify that the Forecast workbook contains the expected sheets and monthly block columns.",
+            "details": tb,
+            "category": type(exc).__name__,
+            "filename": filename,
+            "status_code": 500
+        }), 500
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
 
 @app.route("/api/reset", methods=["POST"])
 def reset_data():
-    """Reset the application: clear the pipeline and delete temporary files."""
+    """Reset the application: clear the pipeline from memory."""
     global pipeline
     pipeline = None
 
-    # Delete uploaded files
+    # Clean up any residual files in uploads directory if present
     upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
-    for fname in ("current_icb.xlsx", "current_forecast.xlsx"):
-        fpath = os.path.join(upload_dir, fname)
-        if os.path.exists(fpath):
-            try:
-                os.remove(fpath)
-            except OSError:
-                pass
+    if os.path.exists(upload_dir):
+        for fname in os.listdir(upload_dir):
+            fpath = os.path.join(upload_dir, fname)
+            if os.path.isfile(fpath):
+                try:
+                    os.remove(fpath)
+                except OSError:
+                    pass
 
     return jsonify({"message": "Data unloaded successfully."})
 

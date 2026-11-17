@@ -1,15 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ICB - Consultant Expense Analysis</title>
-    <meta name="description" content="ICB Capgemini Application - Intercompany consultant expense and billing analysis.">
+    <meta name="description"
+        content="ICB Capgemini Application - Intercompany consultant expense and billing analysis.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css?v=4">
 </head>
+
 <body>
 
     <!-- Header -->
@@ -22,7 +25,9 @@
         <button class="btn btn--export" id="btn-export" onclick="showExportModal()" style="display:none;">
             Export
         </button>
-        <button class="btn btn--upload" id="btn-upload-forecast" onclick="document.getElementById('forecast-input').click()" style="display:none; background-color: var(--color-accent-light);">
+        <button class="btn btn--upload" id="btn-upload-forecast"
+            onclick="document.getElementById('forecast-input').click()"
+            style="display:none; background-color: var(--color-accent-light);">
             Import Forecast
         </button>
         <button class="btn btn--close" id="btn-reset" onclick="resetApp()" style="display:none;">
@@ -31,8 +36,13 @@
         <input type="file" id="file-input" accept=".xlsx" onchange="uploadFile(this)">
         <input type="file" id="forecast-input" accept=".xlsx" onchange="uploadForecast(this)" style="display:none;">
         <div class="header__search" id="search-wrapper" style="display:none;">
-            <svg class="header__search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" class="header__search-input" id="search-input" placeholder="Search (name, ID, project...)" oninput="applySearch(this.value)">
+            <svg class="header__search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none"
+                stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input type="text" class="header__search-input" id="search-input"
+                placeholder="Search (name, ID, project...)" oninput="applySearch(this.value)">
         </div>
         <span class="header__status" id="status-text">No file loaded</span>
     </header>
@@ -50,7 +60,13 @@
         <!-- Empty state (shown when no file is loaded) -->
         <div class="empty-state" id="empty-state">
             <div class="empty-state__icon">
-                <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                <svg viewBox="0 0 24 24">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                    <polyline points="10 9 9 9 8 9" />
+                </svg>
             </div>
             <div class="empty-state__text">No ICB file loaded</div>
             <div class="empty-state__hint">Click "Load ICB File" to start the analysis.</div>
@@ -61,8 +77,9 @@
             <label>From: <input type="date" id="global-start" onchange="applyGlobalDateFilter()"></label>
             <label>To: <input type="date" id="global-end" onchange="applyGlobalDateFilter()"></label>
             <label style="margin-left: 20px;">
-                Gap Tolerance (Amount/NCR): 
-                <input type="number" step="0.1" id="gap-tolerance-input" value="2" style="width: 60px;" onchange="updateGapTolerance()">
+                Gap Tolerance (Amount/NCR):
+                <input type="number" step="0.1" id="gap-tolerance-input" value="2" style="width: 60px;"
+                    onchange="updateGapTolerance()">
             </label>
         </div>
 
@@ -80,16 +97,22 @@
                             <th rowspan="2" class="col-group-right col-em-name" style="min-width:140px;">
                                 <div class="em-header-wrapper">
                                     <span>EM Lead</span>
-                                    <button type="button" class="em-filter-btn" id="em-filter-btn" onclick="toggleEmDropdown(event)" title="Filter by EM Lead">&#9660;</button>
+                                    <button type="button" class="em-filter-btn" id="em-filter-btn"
+                                        onclick="toggleEmDropdown(event)" title="Filter by EM Lead">&#9660;</button>
                                 </div>
                             </th>
                             <th rowspan="2" style="min-width:280px" class="col-group-right">Project</th>
                             <th rowspan="2" class="col-group-right">Consultant ID</th>
                             <th rowspan="2" class="col-group-right">Full Name</th>
                             <th rowspan="2" class="col-group-right">Grade</th>
-                            <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">NCR</th>
-                            <th colspan="2" class="num col-group-right" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Working Days</th>
-                            <th colspan="3" class="num" style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Transfer Price</th>
+                            <th colspan="2" class="num col-group-right"
+                                style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">NCR</th>
+                            <th colspan="2" class="num col-group-right"
+                                style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Working Days
+                            </th>
+                            <th colspan="3" class="num"
+                                style="text-align: center; border-bottom: 1px solid rgba(255,255,255,0.2);">Transfer
+                                Price</th>
                         </tr>
                         <tr class="sub-header-row">
                             <th class="num sub-header col-sep">ICB</th>
@@ -119,7 +142,9 @@
             <div class="modal-header">Export Data</div>
             <div class="modal-body">
                 <div style="margin-bottom: 16px;">
-                    <div style="font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; color: var(--color-text-dim);">Format</div>
+                    <div
+                        style="font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; color: var(--color-text-dim);">
+                        Format</div>
                     <div style="display:flex; gap: 20px;">
                         <label class="modal-checkbox-label">
                             <input type="radio" name="export-format" value="xlsx" id="export-format-xlsx" checked>
@@ -132,7 +157,9 @@
                     </div>
                 </div>
                 <div style="margin-bottom: 8px;">
-                    <div style="font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; color: var(--color-text-dim);">Optional Columns</div>
+                    <div
+                        style="font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; color: var(--color-text-dim);">
+                        Optional Columns</div>
                     <div style="display:flex; flex-direction:column; gap:12px;">
                         <label class="modal-checkbox-label">
                             <input type="checkbox" id="export-working-days">
@@ -160,728 +187,1007 @@
         </div>
     </div>
 
-<script>
-/* =====================================================================
-   ICB App — Frontend JavaScript
-   ===================================================================== */
+    <!-- Error Details Modal -->
+    <div class="modal-overlay" id="error-modal" style="display:none;"
+        onclick="if(event.target===this)closeErrorModal()">
+        <div class="modal-box modal-box--error" onclick="event.stopPropagation()">
+            <div class="modal-header modal-header--error">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.2" fill="none"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <span id="error-modal-title">Operation Error</span>
+                </div>
+                <button type="button" class="modal-close-icon" onclick="closeErrorModal()"
+                    title="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="error-summary-box" id="error-modal-message"></div>
 
-// -- State --
-let currentMonth = null;       // null = all months
-let availableMonths = [];
-let selectedConsRow = null;     // row element currently selected
-let globalStart = null;
-let globalEnd = null;
-let selectedEmFilter = "ALL";
-let currentSearchQuery = "";
+                <div class="error-tips-box" id="error-modal-tips-container" style="display:none;">
+                    <div class="error-tips-title">
+                        <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2"
+                            fill="none">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                        Troubleshooting Advice
+                    </div>
+                    <div class="error-tips-content" id="error-modal-tips"></div>
+                </div>
 
-// -- Utilities --
-function fmt(n) {
-    if (n == null || isNaN(n)) return "";
-    return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+                <div class="error-meta-row" id="error-modal-meta">
+                    <span class="error-badge" id="error-badge-category"></span>
+                    <span class="error-badge" id="error-badge-file" style="display:none;"></span>
+                    <span class="error-badge" id="error-badge-time"></span>
+                </div>
 
-function monthLabel(mk) {
-    // "2025-07" -> "Jul 25"
-    const parts = mk.split("-");
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    const m = parseInt(parts[1], 10) - 1;
-    return months[m] + " " + parts[0].slice(2);
-}
+                <div style="margin-top: 14px;">
+                    <div class="error-details-toggle" onclick="toggleErrorDetails()">
+                        <span id="error-details-chevron">&#9656;</span>
+                        <span>Technical Details &amp; Stacktrace</span>
+                    </div>
+                    <pre class="error-details-pre" id="error-modal-details" style="display:none;"></pre>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn--secondary" id="btn-copy-error" onclick="copyErrorToClipboard()">
+                    Copy Details
+                </button>
+                <button type="button" class="btn btn--export" onclick="exportErrorToTxt()">
+                    Export Error (.txt)
+                </button>
+                <button type="button" class="btn btn--close" onclick="closeErrorModal()">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
 
-// -- Upload --
-async function uploadFile(input) {
-    const file = input.files[0];
-    if (!file) return;
+    <script>
+        /* =====================================================================
+           ICB App — Frontend JavaScript
+           ===================================================================== */
 
-    document.getElementById("loading-overlay").classList.add("active");
+        // -- State --
+        let currentMonth = null;       // null = all months
+        let availableMonths = [];
+        let selectedConsRow = null;     // row element currently selected
+        let globalStart = null;
+        let globalEnd = null;
+        let selectedEmFilter = "ALL";
+        let currentSearchQuery = "";
 
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-        const resp = await fetch("/api/upload", { method: "POST", body: formData });
-        const data = await resp.json();
-        if (!resp.ok) {
-            alert(data.error || "Error during file loading.");
-            return;
+        // -- Utilities --
+        function fmt(n) {
+            if (n == null || isNaN(n)) return "";
+            return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
 
-        // update status
-        const status = document.getElementById("status-text");
-        status.textContent = data.total_lines.toLocaleString() + " lines read — " +
-                             data.filtered_lines.toLocaleString() + " after filtering";
-        status.classList.add("header__status--loaded");
+        function monthLabel(mk) {
+            // "2025-07" -> "Jul 25"
+            const parts = mk.split("-");
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const m = parseInt(parts[1], 10) - 1;
+            return months[m] + " " + parts[0].slice(2);
+        }
 
-        availableMonths = data.available_months;
-        currentMonth = null;
+        // -- Error Reporting & Modal Helpers --
+        let currentErrorReport = null;
 
-        buildMonthBar();
-        await loadHierarchy();
+        function formatFileSize(bytes) {
+            if (!bytes || bytes === 0) return "0 B";
+            const k = 1024;
+            const sizes = ["B", "KB", "MB", "GB"];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+        }
 
-        document.getElementById("empty-state").style.display = "none";
-        document.getElementById("table-panel").style.display = "flex";
-        document.getElementById("global-filters").style.display = "flex";
-        document.getElementById("month-bar").classList.add("visible");
-        document.getElementById("btn-export").style.display = "inline-block";
-        
-        // Hide ICB button since reloading on top is not allowed
-        document.getElementById("btn-upload").style.display = "none";
-        
-        // Show forecast button after ICB upload
-        document.getElementById("btn-upload-forecast").style.display = "inline-block";
-        document.getElementById("btn-reset").style.display = "inline-flex";
-        document.getElementById("search-wrapper").style.display = "flex";
-        document.getElementById("search-input").value = "";
-        
-        document.getElementById("status-text").textContent = `Active file: ${file.name} (${data.filtered_lines} lines)`;
-        document.getElementById("status-text").classList.add("header__status--loaded");
-        closeAllInlineDetails();
-    } catch (e) {
-        alert("Network error: " + e.message);
-    } finally {
-        document.getElementById("loading-overlay").classList.remove("active");
-        input.value = "";  // Reset input so same file can be re-uploaded
-    }
-}
+        async function parseApiResponse(resp) {
+            const contentType = resp.headers.get("content-type") || "";
+            if (contentType.includes("application/json")) {
+                try {
+                    return await resp.json();
+                } catch (e) {
+                    // JSON parse error, fall through to text extraction
+                }
+            }
+            const rawText = await resp.text();
+            let cleanMessage = "";
+            if (rawText.includes("<!DOCTYPE") || rawText.includes("<html") || rawText.includes("<HTML")) {
+                const matchTitle = rawText.match(/<title>(.*?)<\/title>/i);
+                const matchH1 = rawText.match(/<h1>(.*?)<\/h1>/i);
+                cleanMessage = (matchTitle ? matchTitle[1] : "") || (matchH1 ? matchH1[1] : "") || `Server returned HTML error (HTTP ${resp.status})`;
+            } else {
+                cleanMessage = rawText.slice(0, 300) || `HTTP Error ${resp.status}: ${resp.statusText}`;
+            }
+            return {
+                error: cleanMessage,
+                details: rawText,
+                category: `HTTP ${resp.status}`,
+                statusCode: resp.status
+            };
+        }
 
-async function uploadForecast(input) {
-    if (!input.files || input.files.length === 0) return;
-    const file = input.files[0];
-    const formData = new FormData();
-    formData.append("file", file);
+        function showErrorModal(info) {
+            currentErrorReport = {
+                title: info.title || "Operation Error",
+                message: info.error || info.message || "An unexpected error occurred.",
+                troubleshooting: info.troubleshooting || "",
+                category: info.category || "General Error",
+                filename: info.filename || "",
+                filesize: info.filesize || "",
+                details: info.details || "",
+                statusCode: info.statusCode || info.status_code || "",
+                timestamp: new Date().toLocaleString()
+            };
 
-    const overlay = document.getElementById("loading-overlay");
-    overlay.querySelector("div").textContent = "Loading Forecast file...";
-    overlay.classList.add("active");
+            document.getElementById("error-modal-title").textContent = currentErrorReport.title;
+            document.getElementById("error-modal-message").textContent = currentErrorReport.message;
 
-    try {
-        const res = await fetch("/api/upload_forecast", {
-            method: "POST",
-            body: formData
-        });
-        const data = await res.json();
-        if (!res.ok) {
-            alert(data.error || "Error during Forecast loading");
-        } else {
-            // Permanently hide the forecast import button
-            document.getElementById("btn-upload-forecast").style.display = "none";
-            // Reload hierarchy to display new columns
+            const tipsContainer = document.getElementById("error-modal-tips-container");
+            if (currentErrorReport.troubleshooting) {
+                document.getElementById("error-modal-tips").textContent = currentErrorReport.troubleshooting;
+                tipsContainer.style.display = "block";
+            } else {
+                tipsContainer.style.display = "none";
+            }
+
+            document.getElementById("error-badge-category").textContent = "Category: " + currentErrorReport.category;
+            const fileBadge = document.getElementById("error-badge-file");
+            if (currentErrorReport.filename) {
+                fileBadge.textContent = "File: " + currentErrorReport.filename + (currentErrorReport.filesize ? ` (${currentErrorReport.filesize})` : "");
+                fileBadge.style.display = "inline-block";
+            } else {
+                fileBadge.style.display = "none";
+            }
+            document.getElementById("error-badge-time").textContent = currentErrorReport.timestamp;
+
+            const detailsPre = document.getElementById("error-modal-details");
+            const chevron = document.getElementById("error-details-chevron");
+            detailsPre.textContent = currentErrorReport.details || "No technical stacktrace provided.";
+            if (currentErrorReport.details && currentErrorReport.details.length > 50) {
+                detailsPre.style.display = "block";
+                chevron.innerHTML = "&#9662;";
+            } else {
+                detailsPre.style.display = "none";
+                chevron.innerHTML = "&#9656;";
+            }
+
+            document.getElementById("error-modal").style.display = "flex";
+        }
+
+        function closeErrorModal() {
+            document.getElementById("error-modal").style.display = "none";
+        }
+
+        function toggleErrorDetails() {
+            const detailsPre = document.getElementById("error-modal-details");
+            const chevron = document.getElementById("error-details-chevron");
+            if (detailsPre.style.display === "none") {
+                detailsPre.style.display = "block";
+                chevron.innerHTML = "&#9662;";
+            } else {
+                detailsPre.style.display = "none";
+                chevron.innerHTML = "&#9656;";
+            }
+        }
+
+        function generateErrorTextReport(report) {
+            if (!report) return "";
+            const border = "=".repeat(72);
+            const subBorder = "-".repeat(72);
+            let text = `${border}\nICB ANALYSIS TOOL - ERROR REPORT\n${border}\n\n`;
+            text += `Date / Time    : ${report.timestamp}\n`;
+            text += `Action / Title : ${report.title}\n`;
+            text += `Category       : ${report.category}\n`;
+            if (report.statusCode) text += `Status Code    : ${report.statusCode}\n`;
+            if (report.filename) text += `Target File    : ${report.filename}\n`;
+            if (report.filesize) text += `File Size      : ${report.filesize}\n`;
+            text += `\nSUMMARY:\n${subBorder}\n${report.message}\n`;
+
+            if (report.troubleshooting) {
+                text += `\nTROUBLESHOOTING ADVICE:\n${subBorder}\n${report.troubleshooting}\n`;
+            }
+
+            if (report.details) {
+                text += `\nTECHNICAL DETAILS & STACKTRACE:\n${subBorder}\n${report.details}\n`;
+            }
+            text += `\n${border}\nEnd of Error Report\n`;
+            return text;
+        }
+
+        function exportErrorToTxt() {
+            if (!currentErrorReport) return;
+            const reportText = generateErrorTextReport(currentErrorReport);
+            const blob = new Blob([reportText], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            const dateStr = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+            a.href = url;
+            a.download = `icb_error_${dateStr}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        async function copyErrorToClipboard() {
+            if (!currentErrorReport) return;
+            const reportText = generateErrorTextReport(currentErrorReport);
+            const btn = document.getElementById("btn-copy-error");
+            try {
+                await navigator.clipboard.writeText(reportText);
+                const orig = btn.textContent;
+                btn.textContent = "Copied!";
+                btn.classList.add("btn--copied");
+                setTimeout(() => {
+                    btn.textContent = orig;
+                    btn.classList.remove("btn--copied");
+                }, 2000);
+            } catch (e) {
+                const ta = document.createElement("textarea");
+                ta.value = reportText;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand("copy");
+                document.body.removeChild(ta);
+                const orig = btn.textContent;
+                btn.textContent = "Copied!";
+                btn.classList.add("btn--copied");
+                setTimeout(() => {
+                    btn.textContent = orig;
+                    btn.classList.remove("btn--copied");
+                }, 2000);
+            }
+        }
+
+        // -- Upload --
+        async function uploadFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            document.getElementById("loading-overlay").classList.add("active");
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                const resp = await fetch("/api/upload", { method: "POST", body: formData });
+                const data = await parseApiResponse(resp);
+                if (!resp.ok || data.error) {
+                    showErrorModal({
+                        title: "Failed to Load ICB File",
+                        error: data.error || "An error occurred while loading the ICB file.",
+                        troubleshooting: data.troubleshooting || "",
+                        category: data.category || (resp.ok ? "Processing Error" : `HTTP ${resp.status}`),
+                        details: data.details || "",
+                        filename: file.name,
+                        filesize: formatFileSize(file.size),
+                        statusCode: resp.status
+                    });
+                    return;
+                }
+
+                // update status
+                const status = document.getElementById("status-text");
+                status.textContent = data.total_lines.toLocaleString() + " lines read — " +
+                    data.filtered_lines.toLocaleString() + " after filtering";
+                status.classList.add("header__status--loaded");
+
+                availableMonths = data.available_months;
+                currentMonth = null;
+
+                buildMonthBar();
+                await loadHierarchy();
+
+                document.getElementById("empty-state").style.display = "none";
+                document.getElementById("table-panel").style.display = "flex";
+                document.getElementById("global-filters").style.display = "flex";
+                document.getElementById("month-bar").classList.add("visible");
+                document.getElementById("btn-export").style.display = "inline-block";
+
+                // Hide ICB button since reloading on top is not allowed
+                document.getElementById("btn-upload").style.display = "none";
+
+                // Show forecast button after ICB upload
+                document.getElementById("btn-upload-forecast").style.display = "inline-block";
+                document.getElementById("btn-reset").style.display = "inline-flex";
+                document.getElementById("search-wrapper").style.display = "flex";
+                document.getElementById("search-input").value = "";
+
+                document.getElementById("status-text").textContent = `Active file: ${file.name} (${data.filtered_lines} lines)`;
+                document.getElementById("status-text").classList.add("header__status--loaded");
+                closeAllInlineDetails();
+            } catch (e) {
+                showErrorModal({
+                    title: "Network / Connection Error",
+                    error: e.message || "Failed to communicate with the application server.",
+                    troubleshooting: "Please ensure the application server is running and your network connection is active.",
+                    category: "Client Exception",
+                    details: e.stack || String(e),
+                    filename: file.name,
+                    filesize: formatFileSize(file.size)
+                });
+            } finally {
+                document.getElementById("loading-overlay").classList.remove("active");
+                input.value = "";  // Reset input so same file can be re-uploaded
+            }
+        }
+
+        async function uploadForecast(input) {
+            if (!input.files || input.files.length === 0) return;
+            const file = input.files[0];
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const overlay = document.getElementById("loading-overlay");
+            overlay.querySelector("div").textContent = "Loading Forecast file...";
+            overlay.classList.add("active");
+
+            try {
+                const res = await fetch("/api/upload_forecast", {
+                    method: "POST",
+                    body: formData
+                });
+                const data = await parseApiResponse(res);
+                if (!res.ok || data.error) {
+                    showErrorModal({
+                        title: "Failed to Import Forecast File",
+                        error: data.error || "An error occurred while importing the Forecast file.",
+                        troubleshooting: data.troubleshooting || "",
+                        category: data.category || (res.ok ? "Processing Error" : `HTTP ${res.status}`),
+                        details: data.details || "",
+                        filename: file.name,
+                        filesize: formatFileSize(file.size),
+                        statusCode: res.status
+                    });
+                } else {
+                    // Permanently hide the forecast import button
+                    document.getElementById("btn-upload-forecast").style.display = "none";
+                    // Reload hierarchy to display new columns
+                    await loadHierarchy();
+                }
+            } catch (err) {
+                showErrorModal({
+                    title: "Network / Connection Error",
+                    error: err.message || "Connection error while uploading Forecast file.",
+                    troubleshooting: "Please ensure the application server is running.",
+                    category: "Client Exception",
+                    details: err.stack || String(err),
+                    filename: file.name,
+                    filesize: formatFileSize(file.size)
+                });
+            } finally {
+                overlay.classList.remove("active");
+                overlay.querySelector("div").textContent = "Loading file...";
+                input.value = "";
+            }
+        }
+
+        // -- Month bar --
+        function buildMonthBar() {
+            const bar = document.getElementById("month-bar");
+            // remove old buttons (keep the label)
+            while (bar.children.length > 1) {
+                bar.removeChild(bar.lastChild);
+            }
+
+            // "All" button
+            const allBtn = document.createElement("button");
+            allBtn.className = "month-btn active";
+            allBtn.textContent = "All";
+            allBtn.onclick = () => selectMonth(null);
+            allBtn.dataset.month = "all";
+            bar.appendChild(allBtn);
+
+            // Individual months
+            availableMonths.forEach(mk => {
+                const btn = document.createElement("button");
+                btn.className = "month-btn";
+                btn.textContent = monthLabel(mk);
+                btn.onclick = () => selectMonth(mk);
+                btn.dataset.month = mk;
+                bar.appendChild(btn);
+            });
+        }
+
+        async function selectMonth(mk) {
+            currentMonth = mk;
+
+            // update button styles
+            document.querySelectorAll(".month-btn").forEach(btn => {
+                const isCurrent = (mk === null && btn.dataset.month === "all") ||
+                    (btn.dataset.month === mk);
+                btn.classList.toggle("active", isCurrent);
+            });
+
+            closeAllInlineDetails();
             await loadHierarchy();
         }
-    } catch (err) {
-        alert("Connection error.");
-    } finally {
-        overlay.classList.remove("active");
-        overlay.querySelector("div").textContent = "Loading file...";
-        input.value = "";
-    }
-}
 
-// -- Month bar --
-function buildMonthBar() {
-    const bar = document.getElementById("month-bar");
-    // remove old buttons (keep the label)
-    while (bar.children.length > 1) {
-        bar.removeChild(bar.lastChild);
-    }
+        // -- Load hierarchy data --
+        async function loadHierarchy() {
+            let url = "/api/hierarchy?";
+            if (currentMonth) url += `month=${currentMonth}&`;
+            if (globalStart) url += `start_date=${globalStart}&`;
+            if (globalEnd) url += `end_date=${globalEnd}&`;
+            const resp = await fetch(url);
+            const data = await resp.json();
+            window.currentHierarchyData = data;
+            renderHierarchy(data);
+        }
 
-    // "All" button
-    const allBtn = document.createElement("button");
-    allBtn.className = "month-btn active";
-    allBtn.textContent = "All";
-    allBtn.onclick = () => selectMonth(null);
-    allBtn.dataset.month = "all";
-    bar.appendChild(allBtn);
+        async function applyGlobalDateFilter() {
+            globalStart = document.getElementById("global-start").value || null;
+            globalEnd = document.getElementById("global-end").value || null;
 
-    // Individual months
-    availableMonths.forEach(mk => {
-        const btn = document.createElement("button");
-        btn.className = "month-btn";
-        btn.textContent = monthLabel(mk);
-        btn.onclick = () => selectMonth(mk);
-        btn.dataset.month = mk;
-        bar.appendChild(btn);
-    });
-}
+            // fetch new available months
+            let url = "/api/months?";
+            if (globalStart) url += `start_date=${globalStart}&`;
+            if (globalEnd) url += `end_date=${globalEnd}&`;
 
-async function selectMonth(mk) {
-    currentMonth = mk;
+            const resp = await fetch(url);
+            if (!resp.ok) return;
+            availableMonths = await resp.json();
 
-    // update button styles
-    document.querySelectorAll(".month-btn").forEach(btn => {
-        const isCurrent = (mk === null && btn.dataset.month === "all") ||
-                          (btn.dataset.month === mk);
-        btn.classList.toggle("active", isCurrent);
-    });
-
-    closeAllInlineDetails();
-    await loadHierarchy();
-}
-
-// -- Load hierarchy data --
-async function loadHierarchy() {
-    let url = "/api/hierarchy?";
-    if (currentMonth) url += `month=${currentMonth}&`;
-    if (globalStart) url += `start_date=${globalStart}&`;
-    if (globalEnd) url += `end_date=${globalEnd}&`;
-    const resp = await fetch(url);
-    const data = await resp.json();
-    window.currentHierarchyData = data;
-    renderHierarchy(data);
-}
-
-async function applyGlobalDateFilter() {
-    globalStart = document.getElementById("global-start").value || null;
-    globalEnd = document.getElementById("global-end").value || null;
-    
-    // fetch new available months
-    let url = "/api/months?";
-    if (globalStart) url += `start_date=${globalStart}&`;
-    if (globalEnd) url += `end_date=${globalEnd}&`;
-    
-    const resp = await fetch(url);
-    if (!resp.ok) return;
-    availableMonths = await resp.json();
-    
-    if (currentMonth && !availableMonths.includes(currentMonth)) {
-        currentMonth = null;
-    }
-    
-    buildMonthBar();
-    await loadHierarchy();
-}
-
-// -- Gap detection: compare ICB vs FORECAST values --
-function getGapTolerance() {
-    const val = document.getElementById("gap-tolerance-input").value;
-    return parseFloat(val) || 0;
-}
-
-function updateGapTolerance() {
-    if (window.currentHierarchyData) {
-        renderHierarchy(window.currentHierarchyData);
-    }
-}
-
-function hasGapAmount(icb, forecast) {
-    if (icb == null || forecast == null || icb === "" || forecast === "") return false;
-    return Math.abs(icb - forecast) > getGapTolerance();
-}
-function hasGapDays(icb, forecast) {
-    if (icb == null || forecast == null || icb === "" || forecast === "") return false;
-    return icb !== forecast;
-}
-
-// -- Render hierarchy table --
-function renderHierarchy(ccProjects) {
-    const tbody = document.getElementById("table-body");
-    tbody.innerHTML = "";
-
-    if (!ccProjects || ccProjects.length === 0) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = '<td colspan="12" style="text-align:center;padding:32px;color:#718096;">No data for this period.</td>';
-        tbody.appendChild(tr);
-        populateEmDropdown(ccProjects);
-        return;
-    }
-
-    ccProjects.forEach(cc => {
-        // Pre-compute gap flags for CC project totals
-        const ccGapWd = hasGapDays(cc.totals.working_days, cc.totals.forecast_working_days);
-        const ccGapBa = hasGapAmount(cc.totals.bill_amount, cc.totals.forecast_bill_amount);
-        const ccGapNcr = hasGapAmount(cc.totals.ncr, cc.totals.forecast_ncr);
-
-        // -- CC Project row (top-level) --
-        const ccRow = document.createElement("tr");
-        ccRow.className = "row-cc collapsed";
-        ccRow.dataset.cc = cc.cc_project_number;
-        ccRow.dataset.emName = cc.em_name || "";
-        const label = cc.project_name
-            ? esc(cc.project_name) + ' — ' + esc(cc.cc_project_number)
-            : esc(cc.cc_project_number);
-        // Compute Cost gap (signed value)
-        const ccCostGapVal = (cc.totals.forecast_working_days > 0) ? (cc.totals.bill_amount - cc.totals.forecast_bill_amount) : null;
-        ccRow.innerHTML =
-            '<td class="col-group-right em-cell" title="' + esc(cc.em_name || '') + '">' + esc(cc.em_name || '') + '</td>' +
-            '<td class="col-group-right"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
-            '<td colspan="3" class="col-group-right"></td>' +
-            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
-            '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
-            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
-            '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
-            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
-            '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
-            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && Math.abs(ccCostGapVal) > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>';
-        ccRow.onclick = () => toggleCC(cc.cc_project_number);
-        tbody.appendChild(ccRow);
-
-        // -- Consultant rows --
-        cc.consultants.forEach((cons, idx) => {
-            // Pre-compute gap flags per consultant
-            const gapNcr = hasGapAmount(cons.ncr, cons.forecast_ncr);
-            const gapWd = hasGapDays(cons.working_days, cons.forecast_working_days);
-            const gapBa = hasGapAmount(cons.total_bill_amount, cons.forecast_bill_amount);
-
-            const consRow = document.createElement("tr");
-            let cls = "row-consultant";
-            if (idx % 2 === 1) cls += " alt";
-            if (cons.has_anomaly) cls += " anomaly";
-            if (cons.has_overtime) cls += " has-overtime";
-            consRow.className = cls;
-            consRow.style.display = "none";
-            consRow.dataset.cc = cc.cc_project_number;
-            consRow.dataset.emp = cons.employee_id;
-            consRow.dataset.projectname = cc.project_name || "";
-            consRow.dataset.emName = cc.em_name || "";
-            // Compute Cost gap per consultant (signed value)
-            const consCostGapVal = (cons.forecast_working_days > 0) ? (cons.total_bill_amount - cons.forecast_bill_amount) : null;
-            // Source badge (ICB only / Forecast only)
-            let sourceBadge = '';
-            if (cons.source === 'icb_only') {
-                sourceBadge = '<span class="source-badge badge-icb" title="Present in ICB only — no matching Forecast entry">ICB</span>';
-            } else if (cons.source === 'forecast_only') {
-                sourceBadge = '<span class="source-badge badge-fc" title="Present in Forecast only — no matching ICB entry">FC</span>';
+            if (currentMonth && !availableMonths.includes(currentMonth)) {
+                currentMonth = null;
             }
-            // Overtime indicator
-            let otBadge = '';
-            if (cons.has_overtime) {
-                otBadge = '<span class="source-badge badge-ot" title="Overtime detected (e.g. x1.25, x1.5, x2)">OT</span>';
+
+            buildMonthBar();
+            await loadHierarchy();
+        }
+
+        // -- Gap detection: compare ICB vs FORECAST values --
+        function getGapTolerance() {
+            const val = document.getElementById("gap-tolerance-input").value;
+            return parseFloat(val) || 0;
+        }
+
+        function updateGapTolerance() {
+            if (window.currentHierarchyData) {
+                renderHierarchy(window.currentHierarchyData);
             }
-            consRow.innerHTML =
-                '<td class="col-group-right"></td>' +
-                '<td class="label-indent-1 col-group-right">' + sourceBadge + otBadge + '</td>' +
-                '<td>' + esc(cons.employee_id) + '</td>' +
-                '<td>' + esc(cons.name) + '</td>' +
-                '<td>' + esc(cons.grade) + '</td>' +
-                '<td class="num' + (gapNcr ? ' cell-gap' : '') + '">' + fmt(cons.ncr) + '</td>' + // NCR ICB
-                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_ncr) : '') + '</td>' + // NCR FORECAST
-                '<td class="num' + (gapWd ? ' cell-gap' : '') + '">' + fmt(cons.working_days) + '</td>' + // WD ICB
-                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_working_days) : '') + '</td>' + // WD FORECAST
-                '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + fmt(cons.total_bill_amount) + '</td>' + // BA ICB
-                '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
-                '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + (consCostGapVal != null && Math.abs(consCostGapVal) > getGapTolerance() ? fmt(consCostGapVal) : '') + '</td>';
-            consRow.dataset.consName = cons.name;
-            consRow.onclick = (e) => { e.stopPropagation(); toggleDetail(consRow); };
-            tbody.appendChild(consRow);
+        }
+
+        function hasGapAmount(icb, forecast) {
+            if (icb == null || forecast == null || icb === "" || forecast === "") return false;
+            return Math.abs(icb - forecast) > getGapTolerance();
+        }
+        function hasGapDays(icb, forecast) {
+            if (icb == null || forecast == null || icb === "" || forecast === "") return false;
+            return icb !== forecast;
+        }
+
+        // -- Render hierarchy table --
+        function renderHierarchy(ccProjects) {
+            const tbody = document.getElementById("table-body");
+            tbody.innerHTML = "";
+
+            if (!ccProjects || ccProjects.length === 0) {
+                const tr = document.createElement("tr");
+                tr.innerHTML = '<td colspan="12" style="text-align:center;padding:32px;color:#718096;">No data for this period.</td>';
+                tbody.appendChild(tr);
+                populateEmDropdown(ccProjects);
+                return;
+            }
+
+            ccProjects.forEach(cc => {
+                // Pre-compute gap flags for CC project totals
+                const ccHasForecast = cc.totals.forecast_working_days > 0 || cc.totals.forecast_bill_amount > 0;
+                const ccGapWd = ccHasForecast && hasGapDays(cc.totals.working_days, cc.totals.forecast_working_days);
+                const ccGapBa = ccHasForecast && hasGapAmount(cc.totals.bill_amount, cc.totals.forecast_bill_amount);
+                const ccGapNcr = ccHasForecast && hasGapAmount(cc.totals.ncr, cc.totals.forecast_ncr);
+
+                // -- CC Project row (top-level) --
+                const ccRow = document.createElement("tr");
+                ccRow.className = "row-cc collapsed";
+                ccRow.dataset.cc = cc.cc_project_number;
+                ccRow.dataset.emName = cc.em_name || "";
+                const label = cc.project_name
+                    ? esc(cc.project_name) + ' — ' + esc(cc.cc_project_number)
+                    : esc(cc.cc_project_number);
+                // Compute Cost gap (signed value)
+                const ccCostGapVal = (cc.totals.forecast_working_days > 0) ? (cc.totals.bill_amount - cc.totals.forecast_bill_amount) : null;
+                ccRow.innerHTML =
+                    '<td class="col-group-right em-cell" title="' + esc(cc.em_name || '') + '">' + esc(cc.em_name || '') + '</td>' +
+                    '<td class="col-group-right"><span class="toggle-icon">&#9660;</span> ' + label + '</td>' +
+                    '<td colspan="3" class="col-group-right"></td>' +
+                    '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
+                    '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+                    '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
+                    '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
+                    '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
+                    '<td class="num" style="color:#7ee8e4; font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+                    '<td class="num' + (ccCostGapVal != null && ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && Math.abs(ccCostGapVal) > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>';
+                ccRow.onclick = () => toggleCC(cc.cc_project_number);
+                tbody.appendChild(ccRow);
+
+                // -- Consultant rows --
+                cc.consultants.forEach((cons, idx) => {
+                    // Pre-compute gap flags per consultant (when forecast data exists)
+                    const hasForecast = cons.source === 'both' || cons.source === 'forecast_only';
+                    const gapNcr = hasForecast && hasGapAmount(cons.ncr, cons.forecast_ncr);
+                    const gapWd = hasForecast && hasGapDays(cons.working_days, cons.forecast_working_days);
+                    const gapBa = hasForecast && hasGapAmount(cons.total_bill_amount, cons.forecast_bill_amount);
+
+                    const consRow = document.createElement("tr");
+                    let cls = "row-consultant";
+                    if (idx % 2 === 1) cls += " alt";
+                    if (cons.has_anomaly) cls += " anomaly";
+                    if (cons.has_overtime) cls += " has-overtime";
+                    consRow.className = cls;
+                    consRow.style.display = "none";
+                    consRow.dataset.cc = cc.cc_project_number;
+                    consRow.dataset.emp = cons.employee_id;
+                    consRow.dataset.projectname = cc.project_name || "";
+                    consRow.dataset.emName = cc.em_name || "";
+                    // Compute Cost gap per consultant (signed value)
+                    const consCostGapVal = (hasForecast && cons.forecast_working_days > 0) ? (cons.total_bill_amount - cons.forecast_bill_amount) : null;
+                    // Source badge (ICB only / Forecast only)
+                    let sourceBadge = '';
+                    if (cons.source === 'icb_only') {
+                        sourceBadge = '<span class="source-badge badge-icb" title="Present in ICB only — no matching Forecast entry">ICB</span>';
+                    } else if (cons.source === 'forecast_only') {
+                        sourceBadge = '<span class="source-badge badge-fc" title="Present in Forecast only — no matching ICB entry">FC</span>';
+                    }
+                    // Overtime indicator
+                    let otBadge = '';
+                    if (cons.has_overtime) {
+                        otBadge = '<span class="source-badge badge-ot" title="Overtime detected (e.g. x1.25, x1.5, x2)">OT</span>';
+                    }
+                    consRow.innerHTML =
+                        '<td class="col-group-right"></td>' +
+                        '<td class="label-indent-1 col-group-right">' + sourceBadge + otBadge + '</td>' +
+                        '<td>' + esc(cons.employee_id) + '</td>' +
+                        '<td>' + esc(cons.name) + '</td>' +
+                        '<td>' + esc(cons.grade) + '</td>' +
+                        '<td class="num' + (gapNcr ? ' cell-gap' : '') + '">' + fmt(cons.ncr) + '</td>' + // NCR ICB
+                        '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+                        '<td class="num' + (gapWd ? ' cell-gap' : '') + '">' + fmt(cons.working_days) + '</td>' + // WD ICB
+                        '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_working_days) : '') + '</td>' + // WD FORECAST
+                        '<td class="num' + (gapBa ? ' cell-gap' : '') + '">' + fmt(cons.total_bill_amount) + '</td>' + // BA ICB
+                        '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cons.forecast_working_days > 0 ? fmt(cons.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+                        '<td class="num' + (consCostGapVal != null && gapBa ? ' cell-gap' : '') + '">' + (consCostGapVal != null && Math.abs(consCostGapVal) > getGapTolerance() ? fmt(consCostGapVal) : '') + '</td>';
+                    consRow.dataset.consName = cons.name;
+                    consRow.onclick = (e) => { e.stopPropagation(); toggleDetail(consRow); };
+                    tbody.appendChild(consRow);
+                });
+
+                // -- Totals row --
+                const totRow = document.createElement("tr");
+                totRow.className = "row-totals";
+                totRow.style.display = "none";
+                totRow.dataset.cc = cc.cc_project_number;
+                totRow.dataset.emName = cc.em_name || "";
+                // Reuse ccCostGapVal (signed) computed above for totals
+                totRow.innerHTML =
+                    '<td class="col-group-right"></td>' +
+                    '<td class="label-indent-1 col-group-right"></td>' +
+                    '<td colspan="3">TOTAL ' + esc(cc.cc_project_number) + '</td>' +
+                    '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
+                    '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
+                    '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
+                    '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
+                    '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
+                    '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
+                    '<td class="num' + (ccCostGapVal != null && ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && Math.abs(ccCostGapVal) > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>';
+                tbody.appendChild(totRow);
+            });
+
+            populateEmDropdown(ccProjects);
+            applyTableFilters();
+        }
+
+        // -- Toggle expand/collapse --
+        function toggleCC(ccNumber) {
+            const rows = document.querySelectorAll('#table-body tr');
+            const ccRow = document.querySelector('.row-cc[data-cc="' + ccNumber + '"]');
+            const isCollapsed = ccRow.classList.toggle("collapsed");
+
+            rows.forEach(row => {
+                if (row === ccRow) return;
+                if (row.dataset.cc === ccNumber && !row.classList.contains("row-cc")) {
+                    row.style.display = isCollapsed ? "none" : "";
+                }
+            });
+        }
+
+        async function fetchTransactions(empId, ccProj) {
+            let url = `/api/transactions?employee=${encodeURIComponent(empId)}&cc_project=${encodeURIComponent(ccProj)}`;
+            if (currentMonth) url += `&month=${currentMonth}`;
+            if (globalStart) url += `&start_date=${globalStart}`;
+            if (globalEnd) url += `&end_date=${globalEnd}`;
+
+            const resp = await fetch(url);
+            return await resp.json();
+        }
+
+        // -- Inline detail (toggle under the consultant row) --
+        async function toggleDetail(rowEl) {
+            const empId = rowEl.dataset.emp;
+            const ccProject = rowEl.dataset.cc;
+            const name = rowEl.dataset.consName || "";
+
+            // if detail row already exists right after, remove it (toggle off)
+            const nextRow = rowEl.nextElementSibling;
+            if (nextRow && nextRow.classList.contains("row-detail-inline")) {
+                nextRow.remove();
+                rowEl.classList.remove("selected");
+                selectedConsRow = null;
+                return;
+            }
+
+            // close any other open detail
+            closeAllInlineDetails();
+
+            // highlight this row
+            rowEl.classList.add("selected");
+            selectedConsRow = rowEl;
+
+            // fetch transactions
+            const txns = await fetchTransactions(empId, ccProject);
+
+            // build the inline detail row
+            const detailRow = document.createElement("tr");
+            detailRow.className = "row-detail-inline";
+            detailRow.dataset.cc = ccProject;
+            const td = document.createElement("td");
+            td.setAttribute("colspan", "12");
+
+            let html = '<div class="inline-detail">';
+            html += '<div class="inline-detail__header">';
+            html += '<span>Transactions for ' + esc(name) + ' (' + esc(empId) + ') on ' + esc(ccProject) + '</span>';
+            html += '</div>';
+            html += '<table class="detail-table"><thead><tr>';
+            html += '<th>Transaction ID</th><th>Date</th><th>Expenditure Type</th><th>Invoice</th>';
+            html += '<th class="num">Working Days</th><th class="num">NCR</th>';
+            html += '<th class="num">Raw Cost</th><th class="num">Transfer Price</th>';
+            html += '</tr></thead><tbody>';
+            txns.forEach((t, i) => {
+                let rowClass = (i % 2 === 0 ? 'even' : 'odd');
+                if (t.has_anomaly) {
+                    rowClass += ' anomaly';
+                }
+                html += '<tr class="' + rowClass + '">';
+                html += '<td>' + esc(t.item_id) + '</td>';
+                html += '<td>' + esc(t.date) + '</td>';
+                html += '<td>' + esc(t.expenditure_type) + '</td>';
+                html += '<td>' + esc(t.invoice_type) + '</td>';
+                html += '<td class="num">' + fmt(t.working_days) + '</td>';
+                html += '<td class="num">' + fmt(t.ncr) + '</td>';
+                html += '<td class="num">' + fmt(t.raw_cost) + '</td>';
+                html += '<td class="num">' + fmt(t.bill_amount) + '</td>'; html += '</tr>';
+            });
+            html += '</tbody></table></div>';
+            td.innerHTML = html;
+            detailRow.appendChild(td);
+
+            // insert right after the consultant row
+            rowEl.parentNode.insertBefore(detailRow, rowEl.nextSibling);
+        }
+
+        function closeAllInlineDetails() {
+            document.querySelectorAll('.row-detail-inline').forEach(r => r.remove());
+            if (selectedConsRow) {
+                selectedConsRow.classList.remove("selected");
+                selectedConsRow = null;
+            }
+        }
+
+        // -- EM Name Dropdown Filter --
+        function toggleEmDropdown(e) {
+            if (e) e.stopPropagation();
+            const dropdown = document.getElementById("em-dropdown");
+            const btn = document.getElementById("em-filter-btn");
+            if (!dropdown || !btn) return;
+
+            const isShown = dropdown.style.display !== "none";
+            if (isShown) {
+                dropdown.style.display = "none";
+            } else {
+                const th = btn.closest("th") || btn;
+                const rect = th.getBoundingClientRect();
+                dropdown.style.top = (rect.bottom + 2) + "px";
+                dropdown.style.left = rect.left + "px";
+                dropdown.style.display = "block";
+            }
+        }
+
+        function closeEmDropdown() {
+            const dropdown = document.getElementById("em-dropdown");
+            if (dropdown) dropdown.style.display = "none";
+        }
+
+        document.addEventListener("click", (e) => {
+            const dropdown = document.getElementById("em-dropdown");
+            const btn = document.getElementById("em-filter-btn");
+            if (dropdown && dropdown.style.display !== "none") {
+                if (!dropdown.contains(e.target) && (!btn || !btn.contains(e.target))) {
+                    closeEmDropdown();
+                }
+            }
         });
 
-        // -- Totals row --
-        const totRow = document.createElement("tr");
-        totRow.className = "row-totals";
-        totRow.style.display = "none";
-        totRow.dataset.cc = cc.cc_project_number;
-        totRow.dataset.emName = cc.em_name || "";
-        // Reuse ccCostGapVal (signed) computed above for totals
-        totRow.innerHTML =
-            '<td class="col-group-right"></td>' +
-            '<td class="label-indent-1 col-group-right"></td>' +
-            '<td colspan="3">TOTAL ' + esc(cc.cc_project_number) + '</td>' +
-            '<td class="num' + (ccGapNcr ? ' cell-gap' : '') + '">' + (cc.totals.ncr > 0 ? fmt(cc.totals.ncr) : '') + '</td>' + // NCR ICB
-            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_ncr) : '') + '</td>' + // NCR FORECAST
-            '<td class="num' + (ccGapWd ? ' cell-gap' : '') + '">' + fmt(cc.totals.working_days) + '</td>' + // WD ICB
-            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_working_days) : '') + '</td>' + // WD FORECAST
-            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + fmt(cc.totals.bill_amount) + '</td>' + // BA ICB
-            '<td class="num" style="color:var(--color-accent); font-weight:600;">' + (cc.totals.forecast_working_days > 0 ? fmt(cc.totals.forecast_bill_amount) : '') + '</td>' + // BA FORECAST
-            '<td class="num' + (ccGapBa ? ' cell-gap' : '') + '">' + (ccCostGapVal != null && Math.abs(ccCostGapVal) > getGapTolerance() ? fmt(ccCostGapVal) : '') + '</td>';
-        tbody.appendChild(totRow);
-    });
-
-    populateEmDropdown(ccProjects);
-    applyTableFilters();
-}
-
-// -- Toggle expand/collapse --
-function toggleCC(ccNumber) {
-    const rows = document.querySelectorAll('#table-body tr');
-    const ccRow = document.querySelector('.row-cc[data-cc="' + ccNumber + '"]');
-    const isCollapsed = ccRow.classList.toggle("collapsed");
-
-    rows.forEach(row => {
-        if (row === ccRow) return;
-        if (row.dataset.cc === ccNumber && !row.classList.contains("row-cc")) {
-            row.style.display = isCollapsed ? "none" : "";
+        // Close dropdown on table scroll or window scroll/resize
+        window.addEventListener("scroll", closeEmDropdown, { passive: true });
+        window.addEventListener("resize", closeEmDropdown, { passive: true });
+        const tableScrollEl = document.getElementById("table-scroll");
+        if (tableScrollEl) {
+            tableScrollEl.addEventListener("scroll", closeEmDropdown, { passive: true });
         }
-    });
-}
 
-async function fetchTransactions(empId, ccProj) {
-    let url = `/api/transactions?employee=${encodeURIComponent(empId)}&cc_project=${encodeURIComponent(ccProj)}`;
-    if (currentMonth) url += `&month=${currentMonth}`;
-    if (globalStart) url += `&start_date=${globalStart}`;
-    if (globalEnd) url += `&end_date=${globalEnd}`;
-    
-    const resp = await fetch(url);
-    return await resp.json();
-}
-
-// -- Inline detail (toggle under the consultant row) --
-async function toggleDetail(rowEl) {
-    const empId = rowEl.dataset.emp;
-    const ccProject = rowEl.dataset.cc;
-    const name = rowEl.dataset.consName || "";
-
-    // if detail row already exists right after, remove it (toggle off)
-    const nextRow = rowEl.nextElementSibling;
-    if (nextRow && nextRow.classList.contains("row-detail-inline")) {
-        nextRow.remove();
-        rowEl.classList.remove("selected");
-        selectedConsRow = null;
-        return;
-    }
-
-    // close any other open detail
-    closeAllInlineDetails();
-
-    // highlight this row
-    rowEl.classList.add("selected");
-    selectedConsRow = rowEl;
-
-    // fetch transactions
-    const txns = await fetchTransactions(empId, ccProject);
-
-    // build the inline detail row
-    const detailRow = document.createElement("tr");
-    detailRow.className = "row-detail-inline";
-    detailRow.dataset.cc = ccProject;
-    const td = document.createElement("td");
-    td.setAttribute("colspan", "12");
-
-    let html = '<div class="inline-detail">';
-    html += '<div class="inline-detail__header">';
-    html += '<span>Transactions for ' + esc(name) + ' (' + esc(empId) + ') on ' + esc(ccProject) + '</span>';
-    html += '</div>';
-    html += '<table class="detail-table"><thead><tr>';
-    html += '<th>Transaction ID</th><th>Date</th><th>Expenditure Type</th><th>Invoice</th>';
-    html += '<th class="num">Working Days</th><th class="num">NCR</th>';
-    html += '<th class="num">Raw Cost</th><th class="num">Transfer Price</th>';
-    html += '</tr></thead><tbody>';
-    txns.forEach((t, i) => {
-        let rowClass = (i % 2 === 0 ? 'even' : 'odd');
-        if (t.has_anomaly) {
-            rowClass += ' anomaly';
-        }
-        html += '<tr class="' + rowClass + '">';
-        html += '<td>' + esc(t.item_id) + '</td>';
-        html += '<td>' + esc(t.date) + '</td>';
-        html += '<td>' + esc(t.expenditure_type) + '</td>';
-        html += '<td>' + esc(t.invoice_type) + '</td>';
-        html += '<td class="num">' + fmt(t.working_days) + '</td>';
-        html += '<td class="num">' + fmt(t.ncr) + '</td>';
-        html += '<td class="num">' + fmt(t.raw_cost) + '</td>';
-        html += '<td class="num">' + fmt(t.bill_amount) + '</td>';        html += '</tr>';
-    });
-    html += '</tbody></table></div>';
-    td.innerHTML = html;
-    detailRow.appendChild(td);
-
-    // insert right after the consultant row
-    rowEl.parentNode.insertBefore(detailRow, rowEl.nextSibling);
-}
-
-function closeAllInlineDetails() {
-    document.querySelectorAll('.row-detail-inline').forEach(r => r.remove());
-    if (selectedConsRow) {
-        selectedConsRow.classList.remove("selected");
-        selectedConsRow = null;
-    }
-}
-
-// -- EM Name Dropdown Filter --
-function toggleEmDropdown(e) {
-    if (e) e.stopPropagation();
-    const dropdown = document.getElementById("em-dropdown");
-    const btn = document.getElementById("em-filter-btn");
-    if (!dropdown || !btn) return;
-
-    const isShown = dropdown.style.display !== "none";
-    if (isShown) {
-        dropdown.style.display = "none";
-    } else {
-        const th = btn.closest("th") || btn;
-        const rect = th.getBoundingClientRect();
-        dropdown.style.top = (rect.bottom + 2) + "px";
-        dropdown.style.left = rect.left + "px";
-        dropdown.style.display = "block";
-    }
-}
-
-function closeEmDropdown() {
-    const dropdown = document.getElementById("em-dropdown");
-    if (dropdown) dropdown.style.display = "none";
-}
-
-document.addEventListener("click", (e) => {
-    const dropdown = document.getElementById("em-dropdown");
-    const btn = document.getElementById("em-filter-btn");
-    if (dropdown && dropdown.style.display !== "none") {
-        if (!dropdown.contains(e.target) && (!btn || !btn.contains(e.target))) {
+        function selectEmFilter(emValue) {
+            selectedEmFilter = emValue;
             closeEmDropdown();
-        }
-    }
-});
-
-// Close dropdown on table scroll or window scroll/resize
-window.addEventListener("scroll", closeEmDropdown, { passive: true });
-window.addEventListener("resize", closeEmDropdown, { passive: true });
-const tableScrollEl = document.getElementById("table-scroll");
-if (tableScrollEl) {
-    tableScrollEl.addEventListener("scroll", closeEmDropdown, { passive: true });
-}
-
-function selectEmFilter(emValue) {
-    selectedEmFilter = emValue;
-    closeEmDropdown();
-    if (window.currentHierarchyData) {
-        populateEmDropdown(window.currentHierarchyData);
-    }
-    applyTableFilters();
-}
-
-function populateEmDropdown(ccProjects) {
-    const listEl = document.getElementById("em-dropdown-list");
-    if (!listEl) return;
-    listEl.innerHTML = "";
-
-    if (!ccProjects || ccProjects.length === 0) {
-        listEl.innerHTML = '<div class="em-dropdown-item" style="color:var(--color-text-dim);">No EM</div>';
-        return;
-    }
-
-    const emCounts = {};
-    let unassignedCount = 0;
-    const totalProjects = ccProjects.length;
-
-    ccProjects.forEach(cc => {
-        const em = (cc.em_name || "").trim();
-        if (em) {
-            emCounts[em] = (emCounts[em] || 0) + 1;
-        } else {
-            unassignedCount++;
-        }
-    });
-
-    const sortedEms = Object.keys(emCounts).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-
-    // Reset if previous selected filter no longer exists
-    if (selectedEmFilter !== "ALL" && selectedEmFilter !== "UNASSIGNED" && !emCounts[selectedEmFilter]) {
-        selectedEmFilter = "ALL";
-    }
-
-    const filterBtn = document.getElementById("em-filter-btn");
-    if (filterBtn) {
-        if (selectedEmFilter !== "ALL") {
-            filterBtn.classList.add("active");
-            filterBtn.title = "Filtered by: " + (selectedEmFilter === "UNASSIGNED" ? "(Unassigned)" : selectedEmFilter);
-        } else {
-            filterBtn.classList.remove("active");
-            filterBtn.title = "Filter by EM Lead";
-        }
-    }
-
-    // Item: "All"
-    const allItem = document.createElement("div");
-    allItem.className = "em-dropdown-item" + (selectedEmFilter === "ALL" ? " active" : "");
-    allItem.innerHTML = `<span>All</span><span class="em-count">${totalProjects}</span>`;
-    allItem.onclick = () => selectEmFilter("ALL");
-    listEl.appendChild(allItem);
-
-    // Items: EM names
-    sortedEms.forEach(em => {
-        const item = document.createElement("div");
-        item.className = "em-dropdown-item" + (selectedEmFilter === em ? " active" : "");
-        item.innerHTML = `<span title="${esc(em)}">${esc(em)}</span><span class="em-count">${emCounts[em]}</span>`;
-        item.onclick = () => selectEmFilter(em);
-        listEl.appendChild(item);
-    });
-
-    // Item: "(Unassigned)" if applicable
-    if (unassignedCount > 0) {
-        const unassignedItem = document.createElement("div");
-        unassignedItem.className = "em-dropdown-item em-unassigned" + (selectedEmFilter === "UNASSIGNED" ? " active" : "");
-        unassignedItem.innerHTML = `<span>(Unassigned)</span><span class="em-count">${unassignedCount}</span>`;
-        unassignedItem.onclick = () => selectEmFilter("UNASSIGNED");
-        listEl.appendChild(unassignedItem);
-    }
-}
-
-// -- Search & Unified Table Filters --
-function applySearch(query) {
-    currentSearchQuery = query;
-    applyTableFilters();
-}
-
-function applyTableFilters() {
-    const q = (currentSearchQuery || "").trim().toLowerCase();
-    const rows = document.querySelectorAll('#table-body tr');
-
-    const allCCs = new Set();
-    const emMatchingCCs = new Set();
-    const searchMatchingCCs = new Set();
-    const visibleCCs = new Set();
-
-    rows.forEach(row => {
-        const cc = row.dataset.cc;
-        if (!cc) return;
-        allCCs.add(cc);
-
-        if (row.classList.contains("row-cc")) {
-            const emName = (row.dataset.emName || "").trim();
-            let matchesEm = false;
-            if (selectedEmFilter === "ALL") {
-                matchesEm = true;
-            } else if (selectedEmFilter === "UNASSIGNED") {
-                matchesEm = !emName;
-            } else {
-                matchesEm = (emName.toLowerCase() === selectedEmFilter.toLowerCase());
+            if (window.currentHierarchyData) {
+                populateEmDropdown(window.currentHierarchyData);
             }
-            if (matchesEm) {
-                emMatchingCCs.add(cc);
+            applyTableFilters();
+        }
+
+        function populateEmDropdown(ccProjects) {
+            const listEl = document.getElementById("em-dropdown-list");
+            if (!listEl) return;
+            listEl.innerHTML = "";
+
+            if (!ccProjects || ccProjects.length === 0) {
+                listEl.innerHTML = '<div class="em-dropdown-item" style="color:var(--color-text-dim);">No EM</div>';
+                return;
             }
 
-            if (!q) {
-                searchMatchingCCs.add(cc);
-            } else {
-                const ccText = row.textContent.toLowerCase();
-                if (ccText.includes(q)) {
-                    searchMatchingCCs.add(cc);
-                }
-            }
-        } else if (row.classList.contains("row-consultant") && q) {
-            const text = row.textContent.toLowerCase();
-            const projectName = (row.dataset.projectname || "").toLowerCase();
-            if (text.includes(q) || cc.toLowerCase().includes(q) || projectName.includes(q)) {
-                searchMatchingCCs.add(cc);
-            }
-        }
-    });
+            const emCounts = {};
+            let unassignedCount = 0;
+            const totalProjects = ccProjects.length;
 
-    allCCs.forEach(cc => {
-        if (emMatchingCCs.has(cc) && (!q || searchMatchingCCs.has(cc))) {
-            visibleCCs.add(cc);
-        }
-    });
-
-    // Update display based on matched CCs AND their collapsed state
-    rows.forEach(row => {
-        if (row.classList.contains("row-cc")) {
-            row.style.display = visibleCCs.has(row.dataset.cc) ? "" : "none";
-        } else if (row.dataset.cc) {
-            if (!visibleCCs.has(row.dataset.cc)) {
-                row.style.display = "none";
-            } else {
-                const ccRow = document.querySelector(`.row-cc[data-cc="${row.dataset.cc}"]`);
-                if (ccRow && ccRow.classList.contains("collapsed")) {
-                    row.style.display = "none";
+            ccProjects.forEach(cc => {
+                const em = (cc.em_name || "").trim();
+                if (em) {
+                    emCounts[em] = (emCounts[em] || 0) + 1;
                 } else {
-                    row.style.display = "";
+                    unassignedCount++;
+                }
+            });
+
+            const sortedEms = Object.keys(emCounts).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+            // Reset if previous selected filter no longer exists
+            if (selectedEmFilter !== "ALL" && selectedEmFilter !== "UNASSIGNED" && !emCounts[selectedEmFilter]) {
+                selectedEmFilter = "ALL";
+            }
+
+            const filterBtn = document.getElementById("em-filter-btn");
+            if (filterBtn) {
+                if (selectedEmFilter !== "ALL") {
+                    filterBtn.classList.add("active");
+                    filterBtn.title = "Filtered by: " + (selectedEmFilter === "UNASSIGNED" ? "(Unassigned)" : selectedEmFilter);
+                } else {
+                    filterBtn.classList.remove("active");
+                    filterBtn.title = "Filter by EM Lead";
                 }
             }
-        }
-    });
-}
-// -- Escape HTML --
-function esc(val) {
-    if (val == null) return "";
-    const d = document.createElement("div");
-    d.textContent = String(val);
-    return d.innerHTML;
-}
 
-// -- Export Modal --
-function showExportModal() {
-    document.getElementById('export-modal').style.display = 'flex';
-}
+            // Item: "All"
+            const allItem = document.createElement("div");
+            allItem.className = "em-dropdown-item" + (selectedEmFilter === "ALL" ? " active" : "");
+            allItem.innerHTML = `<span>All</span><span class="em-count">${totalProjects}</span>`;
+            allItem.onclick = () => selectEmFilter("ALL");
+            listEl.appendChild(allItem);
 
-function closeExportModal() {
-    document.getElementById('export-modal').style.display = 'none';
-}
+            // Items: EM names
+            sortedEms.forEach(em => {
+                const item = document.createElement("div");
+                item.className = "em-dropdown-item" + (selectedEmFilter === em ? " active" : "");
+                item.innerHTML = `<span title="${esc(em)}">${esc(em)}</span><span class="em-count">${emCounts[em]}</span>`;
+                item.onclick = () => selectEmFilter(em);
+                listEl.appendChild(item);
+            });
 
-function submitExport() {
-    closeExportModal();
-    let url = "/api/export?";
-    if (currentMonth) url += `month=${currentMonth}&`;
-    if (globalStart) url += `start_date=${globalStart}&`;
-    if (globalEnd) url += `end_date=${globalEnd}&`;
-    
-    const gapTol = document.getElementById("gap-tolerance-input").value;
-    if (gapTol) url += `gap_tolerance=${gapTol}&`;
-
-    const format = document.querySelector('input[name="export-format"]:checked')?.value || 'xlsx';
-    url += `format=${format}&`;
-    
-    const includeWd = document.getElementById('export-working-days').checked;
-    const includeRc = document.getElementById('export-raw-cost').checked;
-    const includeComments = document.getElementById('export-include-comments').checked;
-    const includeControlling = document.getElementById('export-controlling-comments').checked;
-
-    url += `include_working_days=${includeWd ? '1' : '0'}&`;
-    url += `include_raw_cost=${includeRc ? '1' : '0'}&`;
-    url += `include_comments=${includeComments ? '1' : '0'}&`;
-    url += `include_controlling_comments=${includeControlling ? '1' : '0'}&`;
-    
-    fetch(url)
-        .then(res => res.json())
-        .then(data => {
-            if (data.error) {
-                alert("Export error: " + data.error);
-            } else {
-                alert(`${data.message}\nPath: ${data.path}`);
+            // Item: "(Unassigned)" if applicable
+            if (unassignedCount > 0) {
+                const unassignedItem = document.createElement("div");
+                unassignedItem.className = "em-dropdown-item em-unassigned" + (selectedEmFilter === "UNASSIGNED" ? " active" : "");
+                unassignedItem.innerHTML = `<span>(Unassigned)</span><span class="em-count">${unassignedCount}</span>`;
+                unassignedItem.onclick = () => selectEmFilter("UNASSIGNED");
+                listEl.appendChild(unassignedItem);
             }
-        })
-        .catch(err => {
-            alert("Network error: " + err);
-        });
-}
-// -- Reset / Unload --
-async function resetApp() {
-    try {
-        await fetch("/api/reset", { method: "POST" });
-    } catch (e) {
-        // ignore network errors on reset
-    }
+        }
 
-    // Reset state
-    currentMonth = null;
-    availableMonths = [];
-    globalStart = null;
-    globalEnd = null;
-    selectedConsRow = null;
-    window.currentHierarchyData = null;
-    selectedEmFilter = "ALL";
-    currentSearchQuery = "";
-    closeEmDropdown();
-    const emBtn = document.getElementById("em-filter-btn");
-    if (emBtn) {
-        emBtn.classList.remove("active");
-        emBtn.title = "Filter by EM Lead";
-    }
+        // -- Search & Unified Table Filters --
+        function applySearch(query) {
+            currentSearchQuery = query;
+            applyTableFilters();
+        }
 
-    // Reset UI
-    document.getElementById("table-body").innerHTML = "";
-    document.getElementById("table-panel").style.display = "none";
-    document.getElementById("empty-state").style.display = "flex";
-    document.getElementById("global-filters").style.display = "none";
-    document.getElementById("month-bar").classList.remove("visible");
-    document.getElementById("btn-export").style.display = "none";
-    document.getElementById("btn-upload-forecast").style.display = "none";
-    document.getElementById("btn-reset").style.display = "none";
-    document.getElementById("search-wrapper").style.display = "none";
-    document.getElementById("search-input").value = "";
-    document.getElementById("global-start").value = "";
-    document.getElementById("global-end").value = "";
+        function applyTableFilters() {
+            const q = (currentSearchQuery || "").trim().toLowerCase();
+            const rows = document.querySelectorAll('#table-body tr');
 
-    // Re-show the upload button
-    document.getElementById("btn-upload").style.display = "inline-flex";
+            const allCCs = new Set();
+            const emMatchingCCs = new Set();
+            const searchMatchingCCs = new Set();
+            const visibleCCs = new Set();
 
-    // Reset status
-    const status = document.getElementById("status-text");
-    status.textContent = "No file loaded";
-    status.classList.remove("header__status--loaded");
+            rows.forEach(row => {
+                const cc = row.dataset.cc;
+                if (!cc) return;
+                allCCs.add(cc);
 
-    // Clear the file inputs
-    document.getElementById("file-input").value = "";
-    document.getElementById("forecast-input").value = "";
-}
-</script>
+                if (row.classList.contains("row-cc")) {
+                    const emName = (row.dataset.emName || "").trim();
+                    let matchesEm = false;
+                    if (selectedEmFilter === "ALL") {
+                        matchesEm = true;
+                    } else if (selectedEmFilter === "UNASSIGNED") {
+                        matchesEm = !emName;
+                    } else {
+                        matchesEm = (emName.toLowerCase() === selectedEmFilter.toLowerCase());
+                    }
+                    if (matchesEm) {
+                        emMatchingCCs.add(cc);
+                    }
+
+                    if (!q) {
+                        searchMatchingCCs.add(cc);
+                    } else {
+                        const ccText = row.textContent.toLowerCase();
+                        if (ccText.includes(q)) {
+                            searchMatchingCCs.add(cc);
+                        }
+                    }
+                } else if (row.classList.contains("row-consultant") && q) {
+                    const text = row.textContent.toLowerCase();
+                    const projectName = (row.dataset.projectname || "").toLowerCase();
+                    if (text.includes(q) || cc.toLowerCase().includes(q) || projectName.includes(q)) {
+                        searchMatchingCCs.add(cc);
+                    }
+                }
+            });
+
+            allCCs.forEach(cc => {
+                if (emMatchingCCs.has(cc) && (!q || searchMatchingCCs.has(cc))) {
+                    visibleCCs.add(cc);
+                }
+            });
+
+            // Update display based on matched CCs AND their collapsed state
+            rows.forEach(row => {
+                if (row.classList.contains("row-cc")) {
+                    row.style.display = visibleCCs.has(row.dataset.cc) ? "" : "none";
+                } else if (row.dataset.cc) {
+                    if (!visibleCCs.has(row.dataset.cc)) {
+                        row.style.display = "none";
+                    } else {
+                        const ccRow = document.querySelector(`.row-cc[data-cc="${row.dataset.cc}"]`);
+                        if (ccRow && ccRow.classList.contains("collapsed")) {
+                            row.style.display = "none";
+                        } else {
+                            row.style.display = "";
+                        }
+                    }
+                }
+            });
+        }
+        // -- Escape HTML --
+        function esc(val) {
+            if (val == null) return "";
+            const d = document.createElement("div");
+            d.textContent = String(val);
+            return d.innerHTML;
+        }
+
+        // -- Export Modal --
+        function showExportModal() {
+            document.getElementById('export-modal').style.display = 'flex';
+        }
+
+        function closeExportModal() {
+            document.getElementById('export-modal').style.display = 'none';
+        }
+
+        function submitExport() {
+            closeExportModal();
+            let url = "/api/export?";
+            if (currentMonth) url += `month=${currentMonth}&`;
+            if (globalStart) url += `start_date=${globalStart}&`;
+            if (globalEnd) url += `end_date=${globalEnd}&`;
+
+            const gapTol = document.getElementById("gap-tolerance-input").value;
+            if (gapTol) url += `gap_tolerance=${gapTol}&`;
+
+            const format = document.querySelector('input[name="export-format"]:checked')?.value || 'xlsx';
+            url += `format=${format}&`;
+
+            const includeWd = document.getElementById('export-working-days').checked;
+            const includeRc = document.getElementById('export-raw-cost').checked;
+            const includeComments = document.getElementById('export-include-comments').checked;
+            const includeControlling = document.getElementById('export-controlling-comments').checked;
+
+            url += `include_working_days=${includeWd ? '1' : '0'}&`;
+            url += `include_raw_cost=${includeRc ? '1' : '0'}&`;
+            url += `include_comments=${includeComments ? '1' : '0'}&`;
+            url += `include_controlling_comments=${includeControlling ? '1' : '0'}&`;
+
+            fetch(url)
+                .then(res => parseApiResponse(res))
+                .then(data => {
+                    if (data.error) {
+                        showErrorModal({
+                            title: "Export Error",
+                            error: data.error,
+                            troubleshooting: "Check if the destination path is writable or if the file is already open in another program.",
+                            category: data.category || "Export Failure",
+                            details: data.details || ""
+                        });
+                    } else {
+                        alert(`${data.message}\nPath: ${data.path}`);
+                    }
+                })
+                .catch(err => {
+                    showErrorModal({
+                        title: "Export Network Error",
+                        error: err.message || String(err),
+                        category: "Client Exception",
+                        details: err.stack || String(err)
+                    });
+                });
+        }
+        // -- Reset / Unload --
+        async function resetApp() {
+            try {
+                await fetch("/api/reset", { method: "POST" });
+            } catch (e) {
+                // ignore network errors on reset
+            }
+
+            // Reset state
+            currentMonth = null;
+            availableMonths = [];
+            globalStart = null;
+            globalEnd = null;
+            selectedConsRow = null;
+            window.currentHierarchyData = null;
+            selectedEmFilter = "ALL";
+            currentSearchQuery = "";
+            closeEmDropdown();
+            const emBtn = document.getElementById("em-filter-btn");
+            if (emBtn) {
+                emBtn.classList.remove("active");
+                emBtn.title = "Filter by EM Lead";
+            }
+
+            // Reset UI
+            document.getElementById("table-body").innerHTML = "";
+            document.getElementById("table-panel").style.display = "none";
+            document.getElementById("empty-state").style.display = "flex";
+            document.getElementById("global-filters").style.display = "none";
+            document.getElementById("month-bar").classList.remove("visible");
+            document.getElementById("btn-export").style.display = "none";
+            document.getElementById("btn-upload-forecast").style.display = "none";
+            document.getElementById("btn-reset").style.display = "none";
+            document.getElementById("search-wrapper").style.display = "none";
+            document.getElementById("search-input").value = "";
+            document.getElementById("global-start").value = "";
+            document.getElementById("global-end").value = "";
+
+            // Re-show the upload button
+            document.getElementById("btn-upload").style.display = "inline-flex";
+
+            // Reset status
+            const status = document.getElementById("status-text");
+            status.textContent = "No file loaded";
+            status.classList.remove("header__status--loaded");
+
+            // Clear the file inputs
+            document.getElementById("file-input").value = "";
+            document.getElementById("forecast-input").value = "";
+        }
+    </script>
 </body>
+
 </html>

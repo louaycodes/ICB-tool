@@ -140,6 +140,7 @@ Mapping des métriques Forecast → colonnes du tableau :
   * NCR et Transfer Price : écart > seuil de tolérance configurable.
   * Working Days : comparaison **stricte** (toute différence).
   * Aucun surlignage si l'une des deux valeurs est absente, ni avant le chargement de l'ICB.
+  * Les consultants `forecast_only` (badge `FC`) sont surlignés : leurs valeurs ICB (0) sont comparées aux valeurs Forecast ; le gap et le surlignage sont calculés normalement.
 * **Seuil de tolérance configurable** : champ de saisie dans l'UI (défaut **2**, unité monétaire), source de vérité unique pour le surlignage **et** pour la génération des commentaires d'export. Modification appliquée immédiatement, sans rechargement.
 * **Gap signé** : `Transfer Price ICB − Forecast` (positif = ICB > Forecast). Le surlignage se déclenche sur `|gap| > seuil`.
 * **Union ICB/Forecast** : un consultant présent dans le Forecast mais absent de l'ICB (ou l'inverse) reste affiché ; un indicateur discret signale ces cas pour faciliter l'investigation.
@@ -302,6 +303,7 @@ Regroupé par thème, dans l'ordre approximatif de réalisation.
 | Cas ICB=0 / Forecast>0 absent des commentaires | `if valeur:` traite 0 comme absent | comparaisons explicites |
 | `Cost issue` masqué dès qu'un autre consultant avait un gap WD/NCR | repli exclusif (`if not parts`) | causes indépendantes |
 | En-tête `EM` qui défile avec le corps du tableau | `position: relative` écrase `sticky` + `<tr>` manquant | CSS et HTML corrigés |
+| Consultants `forecast_only` sans surlignage malgré un gap visible (ICB=0 vs Forecast>0) | `hasForecast = cons.source === 'both'` excluait les `forecast_only` de tout calcul de gap | élargi à `cons.source === 'both' \|\| cons.source === 'forecast_only'` |
 
 **Leçon générale** : ne jamais deviner un nom de colonne ou une structure de fichier ; vérifier sur le fichier réel (ou via les logs de production), et toujours loguer clairement quand une colonne est introuvable plutôt que de retomber silencieusement sur 0.
 
